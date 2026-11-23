@@ -1,0 +1,84 @@
+name: Build & Release AgentSwarm Desktop
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    name: Windows x64 Installer (NSIS & MSI)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+
+      - name: Setup Rust stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck & Build web, server, and MCP bundles
+        run: pnpm build
+
+      - name: Run 10-check isolated MCP & API audit
+        run: pnpm exec tsx scripts/mcp_bridge_audit.mjs
+
+      - name: Build Tauri v2 desktop installers
+        env:
+          CI: true
+          SKIP_WEB_BUILD: '1'
+        run: pnpm tauri build
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: agentswarm-windows-installers
+          path: |
+            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/msi/*.msi
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: AgentSwarm ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          files: |
+            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/msi/*.msi
+          body: |
+            ## AgentSwarm ${{ github.ref_name }}
+
+            开箱即用的本地多智能体协同看板与桌面端 MCP 调度中枢（Windows 桌面端，内置 Node 24 运行时，免配置独立运行）。
+
+            ### 本版本亮点
+            - **桌面端独立安装包（Tauri v2）**：内置精简 Node 24 运行时与单文件自包含服务产物，支持系统托盘常驻、单实例唤醒、关闭最小化到托盘以及「在浏览器中打开」。
+            - **桌面端 MCP 主管直驱 + 自动挂起监听**：兼容 Antigravity、CodeX、CodeBuddy、Claude Code；主管完成分工调度后自动调用 `cowork_wait_board(waitForNewActivity=true)` 零轮询挂起待命（等待期 0 Token 消耗），看板支持 `自动监听：开/关` 一键切换。
+            - **统一 4 套柔和主题色**：主程序与 Antigravity 右侧栏插件同步支持 **薰衣草紫（默认）/ 雾霭蓝 / 鼠尾草绿 / 樱花粉** 四色实时切换。
+            - **20 款 CLI 智能体工作台**：支持工作台预设默认模型与原生思考强度、Antigravity / CodeX 实时官方额度监控、多账号切号、三向冲突代码快照安全撤回与手机扫码直连。
+
+            ### 下载说明
+            - 普通用户推荐下载 `*_x64-setup.exe` 安装向导（支持简体中文，用户目录免管理员权限安装），或选用 `.msi` 安装包。

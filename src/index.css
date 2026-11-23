@@ -1,0 +1,123 @@
+@import "tailwindcss";
+
+:root {
+  --ac-primary: #7768A6;
+  --ac-hover: #665794;
+  --ac-deep: #695A96;
+  --ac-text: #5E4F87;
+  --ac-bubble: #7B6BA8;
+  --ac-icon: #7E6FA8;
+  --ac-bar: #8B7BB8;
+  --ac-mid: #9B8EC4;
+  --ac-border-strong: #C8BFE2;
+  --ac-border: #D8D1EC;
+  --ac-border-soft: #E5E2F0;
+  --ac-soft-hover: #EFEBF7;
+  --ac-soft: #F3F0FA;
+  --ac-tint: #F8F6FC;
+  --ac-scrollbar-hover: rgba(119, 104, 166, 0.5);
+  --hm-1: #CFC8E6;
+  --hm-2: #A194CA;
+  --hm-3: #7E6FA8;
+  --hm-4: #5E4F87;
+}
+
+:root[data-accent="blue"] {
+  --ac-primary: #4F7CAC;
+  --ac-hover: #416994;
+  --ac-deep: #466F9A;
+  --ac-text: #385A80;
+  --ac-bubble: #5480AE;
+  --ac-icon: #5683B2;
+  --ac-bar: #6792BF;
+  --ac-mid: #7DA3CA;
+  --ac-border-strong: #B6CCE3;
+  --ac-border: #C5D7EA;
+  --ac-border-soft: #DCE7F3;
+  --ac-soft-hover: #E0ECF8;
+  --ac-soft: #EEF4FB;
+  --ac-tint: #F6FAFE;
+  --ac-scrollbar-hover: rgba(79, 124, 172, 0.5);
+  --hm-1: #C7D9EC;
+  --hm-2: #8EB2D6;
+  --hm-3: #5A86B4;
+  --hm-4: #3B638C;
+}
+
+:root[data-accent="green"] {
+  --ac-primary: #4D8B74;
+  --ac-hover: #3F7661;
+  --ac-deep: #437D67;
+  --ac-text: #366654;
+  --ac-bubble: #528F78;
+  --ac-icon: #55927B;
+  --ac-bar: #65A38C;
+  --ac-mid: #7BB39E;
+  --ac-border-strong: #B4D6C8;
+  --ac-border: #C3DFD4;
+  --ac-border-soft: #DAEBE4;
+  --ac-soft-hover: #DEF0E9;
+  --ac-soft: #EDF7F3;
+  --ac-tint: #F5FBF8;
+  --ac-scrollbar-hover: rgba(77, 139, 116, 0.5);
+  --hm-1: #C5E0D5;
+  --hm-2: #8CC1AC;
+  --hm-3: #56967E;
+  --hm-4: #396E5A;
+}
+
+:root[data-accent="pink"] {
+  --ac-primary: #B06986;
+  --ac-hover: #9A5773;
+  --ac-deep: #A05D79;
+  --ac-text: #884762;
+  --ac-bubble: #B46E8B;
+  --ac-icon: #B87390;
+  --ac-bar: #C4819D;
+  --ac-mid: #CC94AC;
+  --ac-border-strong: #E0BCCA;
+  --ac-border: #E9CCD8;
+  --ac-border-soft: #F2E0E8;
+  --ac-soft-hover: #F5E2EB;
+  --ac-soft: #FBF0F5;
+  --ac-tint: #FDF8FA;
+  --ac-scrollbar-hover: rgba(176, 105, 134, 0.5);
+  --hm-1: #EBCAD8;
+  --hm-2: #D195AE;
+  --hm-3: #B06986;
+  --hm-4: #884762;
+}
+
+@layer base {
+  html {
+    accent-color: var(--ac-primary);
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+}
+
+select {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background-image: none;
+}
+
+/* Subtle custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.35);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--ac-scrollbar-hover);
+}

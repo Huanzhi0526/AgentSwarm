@@ -1,0 +1,19 @@
+node_modules/
+dist/
+dist-server/
+dist-mcp/
+data/
+*.db
+*.db-shm
+*.db-wal
+.local/
+release/
+src-tauri/target/
+src-tauri/gen/
+src-tauri/bundle-stage/
+src-tauri/app-icon-source.png
+.DS_Store
+.env
+*.log
+普通用户全流程体验与修改建议.md
+v1.3 MCP 与 Hook 体验复测及修改建议.md

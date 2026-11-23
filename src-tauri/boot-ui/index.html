@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AgentSwarm · 正在启动</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background: #F6F6F9;
+      color: #1F2024;
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .card {
+      width: 360px;
+      padding: 28px 24px;
+      border-radius: 24px;
+      background: #FFFFFF;
+      border: 1px solid #EAEAEF;
+      box-shadow: 0 8px 28px rgba(20, 20, 35, 0.06);
+      text-align: center;
+    }
+    .logo {
+      width: 52px;
+      height: 52px;
+      margin: 0 auto 14px;
+      display: block;
+    }
+    h1 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 700;
+      color: #1F2024;
+    }
+    p {
+      margin: 8px 0 0;
+      font-size: 13px;
+      color: #7A7D89;
+      line-height: 1.5;
+    }
+    .bar {
+      margin: 18px auto 0;
+      width: 140px;
+      height: 4px;
+      border-radius: 999px;
+      background: #F0EFF5;
+      overflow: hidden;
+    }
+    .bar-fill {
+      width: 45%;
+      height: 100%;
+      border-radius: 999px;
+      background: #7768A6;
+      animation: slide 1.1s ease-in-out infinite;
+    }
+    @keyframes slide {
+      0% { transform: translateX(-100%); }
+      100% { transform: translateX(240%); }
+    }
+    .retry-btn {
+      display: none;
+      margin: 16px auto 0;
+      height: 36px;
+      padding: 0 18px;
+      border: none;
+      border-radius: 12px;
+      background: #7768A6;
+      color: #FFFFFF;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .retry-btn:hover { background: #665794; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <svg class="logo" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect width="36" height="36" rx="10" fill="#EFEBF7"/>
+      <circle cx="18" cy="11.5" r="3.5" fill="#7B6BA8"/>
+      <circle cx="11" cy="23.5" r="3.2" fill="#9585C1"/>
+      <circle cx="25" cy="23.5" r="3.2" fill="#5BA97B"/>
+      <path d="M16.2 14.5L12.6 20.6M19.8 14.5L23.4 20.6M14.3 23.5H21.7" stroke="#7768A6" stroke-width="2" stroke-linecap="round"/>
+    </svg>
+    <h1>AgentSwarm</h1>
+    <p id="status">正在唤醒本地多智能体协同引擎...</p>
+    <div id="bar" class="bar"><div class="bar-fill"></div></div>
+    <button id="retry" class="retry-btn" type="button">重新连接</button>
+  </div>
+
+  <script>
+    const TARGET_URL = 'http://127.0.0.1:25880/';
+    const HEALTH_URL = 'http://127.0.0.1:25880/api/health';
+    const statusEl = document.getElementById('status');
+    const barEl = document.getElementById('bar');
+    const retryBtn = document.getElementById('retry');
+    let attempts = 0;
+
+    async function probe() {
+      attempts += 1;
+      try {
+        const res = await fetch(HEALTH_URL, { cache: 'no-store' });
+        if (res.ok) {
+          window.location.replace(TARGET_URL);
+          return;
+        }
+      } catch {
+        // waiting for embedded server
+      }
+      if (attempts >= 50) {
+        statusEl.textContent = '本地服务启动超时，请检查是否有其他程序占用 25880 端口。';
+        barEl.style.display = 'none';
+        retryBtn.style.display = 'inline-block';
+        return;
+      }
+      setTimeout(probe, 240);
+    }
+
+    retryBtn.addEventListener('click', () => {
+      attempts = 0;
+      statusEl.textContent = '正在重新检测本地协同服务...';
+      barEl.style.display = 'block';
+      retryBtn.style.display = 'none';
+      void probe();
+    });
+
+    void probe();
+  </script>
+</body>
+</html>
