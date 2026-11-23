@@ -65,15 +65,22 @@ jobs:
           Write-Host "MSI Package: $($msiPkg.Name) | SHA256: $((Get-FileHash $msiPkg.FullName -Algorithm SHA256).Hash)"
 
           # Silent user-mode install verification on clean Windows runner
-          Start-Process -FilePath $nsisExe.FullName -ArgumentList '/S' -Wait
-          $installRoot = @(
-            (Join-Path $env:LOCALAPPDATA 'AgentSwarm'),
-            (Join-Path $env:LOCALAPPDATA 'Programs\AgentSwarm')
-          ) | Where-Object { Test-Path (Join-Path $_ 'AgentSwarm.exe') } | Select-Object -First 1
-          if (-not $installRoot) { throw 'Installed AgentSwarm.exe not found after silent install!' }
+          $installRoot = 'C:\agentswarm-ci-install'
+          if (Test-Path $installRoot) { Remove-Item -Recurse -Force $installRoot }
+          Start-Process -FilePath $nsisExe.FullName -ArgumentList "/S /D=$installRoot" -Wait
+          $appExe = Get-ChildItem -Path $installRoot -Filter '*.exe' -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -notlike '*uninstall*' } |
+            Select-Object -First 1
+          if (-not $appExe) {
+            if (Test-Path $installRoot) { Get-ChildItem -Recurse -Depth 3 $installRoot | Select-Object FullName }
+            throw "Installed application .exe not found under $installRoot after silent install!"
+          }
+          Write-Host "Verified installed binary: $($appExe.FullName)"
 
-          $nodeBin = @((Join-Path $installRoot 'runtime\node.exe'), (Join-Path $installRoot 'resources\runtime\node.exe')) | Where-Object { Test-Path $_ } | Select-Object -First 1
-          $srvEntry = @((Join-Path $installRoot 'app\dist-server\index.js'), (Join-Path $installRoot 'resources\app\dist-server\index.js')) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          $nodeBin = Get-ChildItem -Path $installRoot -Recurse -Filter 'node.exe' -File -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+          $srvEntry = Get-ChildItem -Path $installRoot -Recurse -Filter 'index.js' -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match 'dist-server[\\/]+index\.js$' } |
+            Select-Object -First 1 -ExpandProperty FullName
           if (-not $nodeBin -or -not $srvEntry) {
             Get-ChildItem -Recurse -Depth 3 $installRoot | Select-Object FullName
             throw 'Bundled runtime/node.exe or app/dist-server/index.js missing in installed package!'
@@ -114,6 +121,7 @@ jobs:
           } finally {
             if ($proc -and -not $proc.HasExited) { $proc.Kill() }
             if (Test-Path $smokeData) { Remove-Item -Recurse -Force $smokeData -ErrorAction SilentlyContinue }
+            if (Test-Path $installRoot) { Remove-Item -Recurse -Force $installRoot -ErrorAction SilentlyContinue }
           }
 
       - name: Upload workflow artifacts
