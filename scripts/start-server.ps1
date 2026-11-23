@@ -35,13 +35,17 @@ if (-not (Test-Path "data")) {
   New-Item -ItemType Directory -Path "data" | Out-Null
 }
 
-Write-Host "正在后台静默启动 AgentCoWorkBoard 服务，就绪后自动打开浏览器..."
-$env:NODE_ENV = "production"
-$distSrv = Join-Path (Get-Location) "dist-server\index.js"
-$outLog = Join-Path (Get-Location) "data\server.out.log"
-$errLog = Join-Path (Get-Location) "data\server.err.log"
-
-Start-Process -FilePath "node.exe" -ArgumentList @($distSrv) -WorkingDirectory (Get-Location) -WindowStyle Hidden -RedirectStandardOutput $outLog -RedirectStandardError $errLog
+Write-Host "正在后台静默启动 AgentSwarm 服务，就绪后自动打开浏览器..."
+$nodeCmd = (Get-Command node -ErrorAction Stop).Source
+$bootJs = "const {spawn}=require('node:child_process'),fs=require('node:fs');const o=fs.openSync('data/server.out.log','a'),e=fs.openSync('data/server.err.log','a');spawn(process.execPath,['dist-server/index.js'],{env:{...process.env,NODE_ENV:'production'},windowsHide:true,stdio:['ignore',o,e]}).unref();"
+$psi = New-Object System.Diagnostics.ProcessStartInfo
+$psi.FileName = $nodeCmd
+$psi.Arguments = "-e `"$($bootJs.Replace('"', '\"'))`""
+$psi.WorkingDirectory = (Get-Location).Path
+$psi.UseShellExecute = $false
+$psi.CreateNoWindow = $true
+$proc = [System.Diagnostics.Process]::Start($psi)
+if ($proc) { $proc.WaitForExit(3000) | Out-Null }
 
 for ($i = 0; $i -lt 45; $i++) {
   Start-Sleep -Milliseconds 400

@@ -49,7 +49,7 @@ import {
 } from './telemetry/localScanner.js';
 import { getAgentRawLogs, SwarmOrchestrator } from './orchestrator/swarmBus.js';
 import { TEAM_PRESETS } from './orchestrator/presets.js';
-import { openInteractiveAgentSession } from './engines/cliRunner.js';
+import { getBinaryForEngine, openInteractiveAgentSession } from './engines/cliRunner.js';
 import {
   listDesktopMcpClients,
   registerDesktopMcpClient,
@@ -73,6 +73,7 @@ import {
 } from './telemetry/accountManager.js';
 import {
   apiAuthMiddleware,
+  deriveDeviceLabelFromUa,
   getPairingConfig,
   isLocalRequest,
   isLocalSocketAddress,
@@ -90,6 +91,7 @@ import {
   openPathOnHost,
   pickNativeWindowsFolder,
   resolveSafeWorkspacePath,
+  validateWorkspaceDirectory,
 } from './fs/workspaceExplorer.js';
 import type {
   Board,
@@ -110,6 +112,8 @@ import { ENGINE_CATALOG } from './engines/catalog.js';
 const execFileAsync = promisify(execFile);
 
 const PORT = Number(process.env.PORT || 25880);
+const APP_VERSION = '1.4.1';
+const INSTANCE_MODE = process.env.AGENT_SWARM_HOST === 'tauri' ? 'desktop' : 'standalone';
 
 if (process.env.AGENT_COWORK_SKIP_HOST_SCAN !== '1') {
   ensureDefaultAccountSlots();
@@ -364,8 +368,16 @@ function issuePreviewSandboxToken(workspacePath: string): string {
 
 const orchestrator = new SwarmOrchestrator(() => PORT, broadcastWs);
 
-app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, port: PORT });
+app.get('/api/health', (req, res) => {
+  const local = isLocalRequest(req);
+  res.json({
+    ok: true,
+    service: 'agent-swarm',
+    version: APP_VERSION,
+    port: PORT,
+    instanceMode: INSTANCE_MODE,
+    dataDir: local ? DATA_DIR : undefined,
+  });
 });
 
 // --- Phase 4: Auth & Mobile Pairing Endpoints ---
@@ -376,19 +388,41 @@ app.get('/api/auth/status', (req, res) => {
   res.json({
     authorized,
     isLocalhost: isLocal,
+    remoteAccessEnabled: cfg.remoteAccessEnabled,
+    allowedRemoteHost: isLocal ? cfg.allowedRemoteHost : undefined,
     requirePinOnLan: cfg.requirePinOnLan,
     pinCode: isLocal ? cfg.pinCode : undefined,
+    pairedDevices: isLocal ? cfg.pairedDevices : [],
+    pairedDevicesCount: cfg.pairedDevices.length,
   });
 });
 
 app.post('/api/auth/unlock', (req, res) => {
-  const { pairToken, pinCode } = req.body as { pairToken?: string; pinCode?: string };
-  const token = issueClientToken({ pairToken, pinCode });
-  if (!token) {
-    res.status(401).json({ error: '连接码不正确' });
+  const { pairToken, pinCode, deviceLabel } = req.body as {
+    pairToken?: string;
+    pinCode?: string;
+    deviceLabel?: string;
+  };
+  const cfg = getPairingConfig();
+  if (!cfg.remoteAccessEnabled && !isLocalRequest(req)) {
+    res.status(403).json({
+      error: '电脑端尚未开启远程访问，请先在电脑端右上角开启「允许手机/其他设备访问」',
+      remoteDisabled: true,
+    });
     return;
   }
-  res.json({ ok: true, token });
+  const issued = issueClientToken({
+    pairToken,
+    pinCode,
+    deviceLabel: deviceLabel || deriveDeviceLabelFromUa(req.headers['user-agent']),
+    clientIp: req.ip || req.socket.remoteAddress || '',
+    allowWhenDisabled: isLocalRequest(req),
+  });
+  if (!issued) {
+    res.status(401).json({ error: '连接码不正确或配对链接已失效' });
+    return;
+  }
+  res.json({ ok: true, token: issued.token, device: issued.device });
 });
 
 app.patch('/api/auth/config', (req, res) => {
@@ -397,16 +431,24 @@ app.patch('/api/auth/config', (req, res) => {
     return;
   }
   const body = req.body as {
+    remoteAccessEnabled?: boolean;
+    allowedRemoteHost?: string;
     requirePinOnLan?: boolean;
     regeneratePin?: boolean;
     revokeDevices?: boolean;
+    revokeDeviceId?: string;
   };
   const updated = updatePairingConfig(body);
-  if (body.revokeDevices) {
+  syncRemoteListeners();
+
+  if (body.revokeDevices || body.revokeDeviceId || body.remoteAccessEnabled === false) {
     for (const client of wsClients) {
       if (!wsIsLocal.get(client)) {
         try {
-          client.close(1008, 'Device pairing revoked');
+          client.close(
+            1008,
+            body.remoteAccessEnabled === false ? 'Remote access disabled' : 'Device pairing revoked'
+          );
         } catch {
           // ignore
         }
@@ -421,9 +463,11 @@ app.get('/api/workbench', async (req, res) => {
   const webPort = process.env.NODE_ENV === 'production' ? PORT : 5173;
   const forceRefresh = req.query.refresh === '1';
   const overview = await buildWorkbenchOverview(webPort, forceRefresh);
+  const pairing = getPairingConfig();
   res.json({
     ...overview,
     uiTheme: getUiTheme(),
+    remoteAccessEnabled: pairing.remoteAccessEnabled,
   });
 });
 
@@ -431,10 +475,11 @@ app.get('/api/mobile-qr', async (req, res) => {
   const targetBase = String(req.query.url || '');
   const webPort = process.env.NODE_ENV === 'production' ? PORT : 5173;
   const endpoints = detectNetworkEndpoints(webPort);
+  const remoteOnly = endpoints.filter((e) => e.kind !== 'localhost');
   const chosenBase =
     targetBase ||
-    endpoints.find((e) => e.kind === 'lan')?.url ||
-    endpoints.find((e) => e.kind === 'tailscale')?.url ||
+    remoteOnly.find((e) => e.kind === 'lan')?.url ||
+    remoteOnly.find((e) => e.kind === 'tailscale')?.url ||
     endpoints[0].url;
 
   const cfg = getPairingConfig();
@@ -449,7 +494,10 @@ app.get('/api/mobile-qr', async (req, res) => {
     pairUrl: fullPairUrl,
     qrDataUrl: dataUrl,
     endpoints,
+    remoteAccessEnabled: cfg.remoteAccessEnabled,
+    allowedRemoteHost: cfg.allowedRemoteHost,
     requirePinOnLan: cfg.requirePinOnLan,
+    pairedDevices: isLocalRequest(req) ? cfg.pairedDevices : [],
     pinCode: isLocalRequest(req) ? cfg.pinCode : undefined,
   });
 });
@@ -566,6 +614,14 @@ app.post('/api/boards', (req, res) => {
     initialDirective?: string;
   };
 
+  if (body.workspacePath?.trim()) {
+    const unsafeReason = validateWorkspaceDirectory(body.workspacePath, [REPO_ROOT, DATA_DIR]);
+    if (unsafeReason) {
+      res.status(400).json({ error: unsafeReason });
+      return;
+    }
+  }
+
   const board = createBoard({
     title: body.title || '新建团队看板',
     goal: body.goal || body.initialDirective || '',
@@ -579,14 +635,35 @@ app.post('/api/boards', (req, res) => {
     customMembers: body.customMembers,
   });
 
-  if (body.initialDirective?.trim()) {
-    void orchestrator.handleHumanMessage({
-      boardId: board.id,
-      content: body.initialDirective.trim(),
-    });
+  const initialText = body.initialDirective?.trim() || '';
+  let pendingInitialDraft: string | undefined;
+  let pendingReason: string | undefined;
+
+  if (initialText) {
+    const roster = getBoardAgents(board.id);
+    const leader = roster.find((a) => a.isLeader) || roster[0];
+    const leaderBlocked =
+      board.executionMode !== 'demo' &&
+      leader &&
+      leader.engine !== 'demo' &&
+      !getBinaryForEngine(leader.engine);
+
+    if (leaderBlocked) {
+      pendingInitialDraft = initialText;
+      pendingReason = 'leader_engine_uninstalled';
+    } else {
+      void orchestrator.handleHumanMessage({
+        boardId: board.id,
+        content: initialText,
+      });
+    }
   }
 
-  res.status(201).json(board);
+  res.status(201).json(
+    pendingInitialDraft
+      ? { ...board, pendingInitialDraft, pendingReason }
+      : board
+  );
 });
 
 app.delete('/api/boards/:boardId', (req, res) => {
@@ -630,7 +707,7 @@ app.get('/api/fs/browse', (req, res) => {
     }
   }
 
-  const result = browseDirectories(requestedPath, filterQuery);
+  const result = browseDirectories(requestedPath, filterQuery, [REPO_ROOT, DATA_DIR]);
   res.json({
     ...result,
     canPickNativeDialog: isLocalRequest(req) && process.platform === 'win32',
@@ -801,6 +878,14 @@ app.post('/api/boards/:boardId/files/open', (req, res) => {
 
 app.patch('/api/boards/:boardId', (req, res) => {
   const { boardId } = req.params;
+  const reqBody = (req.body || {}) as { workspacePath?: string; hostAutoStandby?: boolean };
+  if (reqBody.workspacePath?.trim()) {
+    const unsafeReason = validateWorkspaceDirectory(reqBody.workspacePath, [REPO_ROOT, DATA_DIR]);
+    if (unsafeReason) {
+      res.status(400).json({ error: unsafeReason });
+      return;
+    }
+  }
   const prevBoard = getBoard(boardId);
   const updated = updateBoardConfig(boardId, req.body);
   if (!updated) {
@@ -1474,6 +1559,7 @@ app.post('/api/mcp/self-test', async (req, res) => {
       command: process.execPath,
       args: stdioArgs,
       cwd: REPO_ROOT,
+      stderr: 'pipe',
       env: {
         ...process.env,
         PORT: String(PORT),
@@ -2714,6 +2800,65 @@ if (process.env.NODE_ENV === 'production' && fs.existsSync(distDir)) {
   });
 }
 
+const remoteListeners = new Map<string, http.Server>();
+
+function syncRemoteListeners() {
+  const cfg = getPairingConfig();
+  const remoteEps = detectNetworkEndpoints(PORT).filter((e) => e.kind !== 'localhost');
+  const desiredIps = new Set<string>(
+    cfg.remoteAccessEnabled
+      ? remoteEps
+          .filter((e) => cfg.allowedRemoteHost === 'all' || e.ip === cfg.allowedRemoteHost)
+          .map((e) => e.ip)
+      : []
+  );
+
+  for (const [ip, srv] of remoteListeners.entries()) {
+    if (!desiredIps.has(ip)) {
+      remoteListeners.delete(ip);
+      try {
+        (srv as http.Server & { closeAllConnections?: () => void }).closeAllConnections?.();
+        srv.close();
+      } catch {
+        // ignore close errors
+      }
+    }
+  }
+
+  for (const ip of desiredIps) {
+    if (remoteListeners.has(ip)) continue;
+    try {
+      const rs = http.createServer(app);
+      rs.on('upgrade', (req, socket, head) => {
+        try {
+          const u = new URL(req.url || '/', 'http://127.0.0.1');
+          if (u.pathname !== '/ws') {
+            socket.destroy();
+            return;
+          }
+          if (!verifyWsAccess(req)) {
+            socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+            socket.destroy();
+            return;
+          }
+          wss.handleUpgrade(req, socket, head, (ws) => {
+            wss.emit('connection', ws, req);
+          });
+        } catch {
+          socket.destroy();
+        }
+      });
+      rs.on('error', () => {
+        remoteListeners.delete(ip);
+      });
+      rs.listen(PORT, ip);
+      remoteListeners.set(ip, rs);
+    } catch {
+      // ignore unavailable interface address
+    }
+  }
+}
+
 const pidRecordPath = path.join(DATA_DIR, 'server.pid.json');
 function cleanupPidRecord() {
   try {
@@ -2737,7 +2882,8 @@ process.on('SIGTERM', () => {
   process.exit(0);
 });
 
-server.listen(PORT, '0.0.0.0', () => {
+server.listen(PORT, '127.0.0.1', () => {
+  syncRemoteListeners();
   try {
     fs.writeFileSync(
       pidRecordPath,
@@ -2745,6 +2891,8 @@ server.listen(PORT, '0.0.0.0', () => {
         {
           pid: process.pid,
           port: PORT,
+          version: APP_VERSION,
+          instanceMode: INSTANCE_MODE,
           dataDir: DATA_DIR,
           startedAt: Date.now(),
         },
@@ -2757,8 +2905,12 @@ server.listen(PORT, '0.0.0.0', () => {
     // ignore pid record write failure
   }
   const endpoints = detectNetworkEndpoints(PORT);
-  console.log(`\nAgentCoWorkBoard Server running on port ${PORT}`);
-  for (const ep of endpoints) {
-    console.log(`  -> ${ep.label}: ${ep.url}`);
+  console.log(`\nAgentSwarm Server v${APP_VERSION} running on http://127.0.0.1:${PORT} (${INSTANCE_MODE})`);
+  if (getPairingConfig().remoteAccessEnabled) {
+    for (const ep of endpoints.filter((e) => e.kind !== 'localhost')) {
+      console.log(`  -> ${ep.label}: ${ep.url}`);
+    }
+  } else {
+    console.log('  -> 默认仅本机访问 (127.0.0.1)，如需手机扫码请在电脑端手动开启共享');
   }
 });

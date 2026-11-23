@@ -8,8 +8,8 @@
     * { box-sizing: border-box; }
     html, body {
       margin: 0;
-      padding: 0;
-      height: 100%;
+      padding: 16px;
+      min-height: 100%;
       background: #F6F6F9;
       color: #1F2024;
       font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
@@ -18,7 +18,8 @@
       justify-content: center;
     }
     .card {
-      width: 360px;
+      width: 100%;
+      max-width: 440px;
       padding: 28px 24px;
       border-radius: 24px;
       background: #FFFFFF;
@@ -41,12 +42,24 @@
     p {
       margin: 8px 0 0;
       font-size: 13px;
-      color: #7A7D89;
-      line-height: 1.5;
+      color: #6E717C;
+      line-height: 1.55;
+    }
+    .data-pill {
+      display: none;
+      margin: 12px auto 0;
+      padding: 6px 10px;
+      border-radius: 10px;
+      background: #F7F6FA;
+      border: 1px solid #EAE8F2;
+      font-size: 11.5px;
+      color: #555866;
+      font-family: Consolas, monospace;
+      word-break: break-all;
     }
     .bar {
       margin: 18px auto 0;
-      width: 140px;
+      width: 160px;
       height: 4px;
       border-radius: 999px;
       background: #F0EFF5;
@@ -63,20 +76,56 @@
       0% { transform: translateX(-100%); }
       100% { transform: translateX(240%); }
     }
-    .retry-btn {
+    .actions {
       display: none;
-      margin: 16px auto 0;
+      margin-top: 18px;
+      gap: 8px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    .btn {
       height: 36px;
-      padding: 0 18px;
-      border: none;
+      padding: 0 16px;
+      border: 1px solid #DFDDE9;
       border-radius: 12px;
-      background: #7768A6;
-      color: #FFFFFF;
+      background: #FFFFFF;
+      color: #3C3E47;
       font-size: 13px;
       font-weight: 600;
       cursor: pointer;
     }
-    .retry-btn:hover { background: #665794; }
+    .btn:hover { background: #F5F4F9; }
+    .btn-primary {
+      border: none;
+      background: #7768A6;
+      color: #FFFFFF;
+    }
+    .btn-primary:hover { background: #665794; }
+    .diag-box {
+      display: none;
+      margin-top: 14px;
+      text-align: left;
+      background: #F8F8FB;
+      border: 1px solid #E5E5EE;
+      border-radius: 12px;
+      padding: 10px 12px;
+    }
+    .diag-pre {
+      margin: 0;
+      max-height: 160px;
+      overflow: auto;
+      font-family: Consolas, monospace;
+      font-size: 11.5px;
+      line-height: 1.45;
+      color: #3C3E47;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .copy-note {
+      margin-top: 6px;
+      font-size: 11.5px;
+      color: #458964;
+    }
   </style>
 </head>
 <body>
@@ -88,49 +137,176 @@
       <circle cx="25" cy="23.5" r="3.2" fill="#5BA97B"/>
       <path d="M16.2 14.5L12.6 20.6M19.8 14.5L23.4 20.6M14.3 23.5H21.7" stroke="#7768A6" stroke-width="2" stroke-linecap="round"/>
     </svg>
-    <h1>AgentSwarm</h1>
+    <h1 id="title">AgentSwarm</h1>
     <p id="status">正在唤醒本地多智能体协同引擎...</p>
+    <div id="dataPill" class="data-pill"></div>
     <div id="bar" class="bar"><div class="bar-fill"></div></div>
-    <button id="retry" class="retry-btn" type="button">重新连接</button>
+
+    <div id="conflictActions" class="actions">
+      <button id="useIsolatedBtn" class="btn btn-primary" type="button"></button>
+      <button id="useExistingBtn" class="btn" type="button"></button>
+    </div>
+
+    <div id="errorActions" class="actions">
+      <button id="restartBtn" class="btn btn-primary" type="button">重启本地服务</button>
+      <button id="diagBtn" class="btn" type="button">查看诊断</button>
+      <button id="copyDiagBtn" class="btn" type="button" style="display:none;">复制脱敏诊断</button>
+    </div>
+
+    <div id="diagBox" class="diag-box">
+      <pre id="diagPre" class="diag-pre"></pre>
+      <div id="copyNote" class="copy-note"></div>
+    </div>
   </div>
 
   <script>
-    const TARGET_URL = 'http://127.0.0.1:25880/';
-    const HEALTH_URL = 'http://127.0.0.1:25880/api/health';
+    const titleEl = document.getElementById('title');
     const statusEl = document.getElementById('status');
+    const dataPill = document.getElementById('dataPill');
     const barEl = document.getElementById('bar');
-    const retryBtn = document.getElementById('retry');
-    let attempts = 0;
+    const conflictActions = document.getElementById('conflictActions');
+    const useIsolatedBtn = document.getElementById('useIsolatedBtn');
+    const useExistingBtn = document.getElementById('useExistingBtn');
+    const errorActions = document.getElementById('errorActions');
+    const restartBtn = document.getElementById('restartBtn');
+    const diagBtn = document.getElementById('diagBtn');
+    const copyDiagBtn = document.getElementById('copyDiagBtn');
+    const diagBox = document.getElementById('diagBox');
+    const diagPre = document.getElementById('diagPre');
+    const copyNote = document.getElementById('copyNote');
 
-    async function probe() {
-      attempts += 1;
-      try {
-        const res = await fetch(HEALTH_URL, { cache: 'no-store' });
-        if (res.ok) {
-          window.location.replace(TARGET_URL);
-          return;
-        }
-      } catch {
-        // waiting for embedded server
+    let latestDiagnostics = '';
+    let conflictResolved = false;
+
+    function getTauriInvoke() {
+      if (window.__TAURI__ && window.__TAURI__.core && typeof window.__TAURI__.core.invoke === 'function') {
+        return window.__TAURI__.core.invoke;
       }
-      if (attempts >= 50) {
-        statusEl.textContent = '本地服务启动超时，请检查是否有其他程序占用 25880 端口。';
-        barEl.style.display = 'none';
-        retryBtn.style.display = 'inline-block';
-        return;
+      if (window.__TAURI_INTERNALS__ && typeof window.__TAURI_INTERNALS__.invoke === 'function') {
+        return window.__TAURI_INTERNALS__.invoke;
       }
-      setTimeout(probe, 240);
+      return null;
     }
 
-    retryBtn.addEventListener('click', () => {
-      attempts = 0;
-      statusEl.textContent = '正在重新检测本地协同服务...';
+    function showErrorState(heading, message, diagnostics) {
+      titleEl.textContent = heading || '本地服务启动异常';
+      statusEl.textContent = message || '后台协同服务未能成功启动，可尝试重启服务或查看脱敏诊断信息。';
+      barEl.style.display = 'none';
+      conflictActions.style.display = 'none';
+      errorActions.style.display = 'flex';
+      latestDiagnostics = diagnostics || '';
+      diagPre.textContent = latestDiagnostics;
+      if (latestDiagnostics) {
+        diagBtn.style.display = 'inline-block';
+      }
+    }
+
+    let browserAttempts = 0;
+
+    async function pollStatus() {
+      const invoke = getTauriInvoke();
+      if (!invoke) {
+        browserAttempts += 1;
+        try {
+          const res = await fetch('http://127.0.0.1:25880/api/health', { cache: 'no-store' });
+          if (res.ok) {
+            window.location.replace('http://127.0.0.1:25880/');
+            return;
+          }
+        } catch {}
+        if (browserAttempts >= 50) {
+          showErrorState('本地服务未响应', '无法连接 http://127.0.0.1:25880，请检查端口或日志。', 'Target: http://127.0.0.1:25880');
+          return;
+        }
+        setTimeout(pollStatus, 260);
+        return;
+      }
+
+      try {
+        const info = await invoke('get_boot_status');
+        latestDiagnostics = info.diagnosticsText || '';
+        diagPre.textContent = latestDiagnostics;
+
+        if (info.dataDirDisplay) {
+          dataPill.textContent = '数据位置：' + info.dataDirDisplay;
+          dataPill.style.display = 'block';
+        }
+
+        if (info.state === 'ready') {
+          if (info.conflictExistingUrl && !conflictResolved) {
+            titleEl.textContent = '检测到另一个 AgentSwarm 服务实例';
+            statusEl.textContent =
+              '默认端口 25880 当前正被其他目录的服务使用。为防止数据串台，桌面安装版已在独立端口 ' +
+              info.activePort +
+              ' 启动自有数据实例。';
+            barEl.style.display = 'none';
+            errorActions.style.display = 'none';
+            conflictActions.style.display = 'flex';
+            useIsolatedBtn.textContent = '进入桌面版独立数据 (:' + info.activePort + ')';
+            useExistingBtn.textContent = '改为访问已有 25880 服务';
+            useIsolatedBtn.onclick = () => {
+              conflictResolved = true;
+              window.location.replace(info.targetUrl);
+            };
+            useExistingBtn.onclick = () => {
+              conflictResolved = true;
+              window.location.replace(info.conflictExistingUrl);
+            };
+            return;
+          }
+          window.location.replace(info.targetUrl);
+          return;
+        }
+
+        if (info.state === 'error') {
+          showErrorState(info.errorTitle, info.errorDetail, info.diagnosticsText);
+          return;
+        }
+      } catch (err) {
+        showErrorState('桌面宿主通信异常', String(err), String(err));
+        return;
+      }
+
+      setTimeout(pollStatus, 260);
+    }
+
+    restartBtn.addEventListener('click', async () => {
+      const invoke = getTauriInvoke();
+      if (!invoke) {
+        browserAttempts = 0;
+        barEl.style.display = 'block';
+        errorActions.style.display = 'none';
+        titleEl.textContent = 'AgentSwarm';
+        statusEl.textContent = '正在重新检测本地协同服务...';
+        void pollStatus();
+        return;
+      }
+      titleEl.textContent = 'AgentSwarm';
+      statusEl.textContent = '正在重启本地协同引擎...';
       barEl.style.display = 'block';
-      retryBtn.style.display = 'none';
-      void probe();
+      errorActions.style.display = 'none';
+      diagBox.style.display = 'none';
+      copyNote.textContent = '';
+      await invoke('restart_embedded_server');
+      setTimeout(pollStatus, 300);
     });
 
-    void probe();
+    diagBtn.addEventListener('click', () => {
+      const open = diagBox.style.display === 'block';
+      diagBox.style.display = open ? 'none' : 'block';
+      copyDiagBtn.style.display = open ? 'none' : 'inline-block';
+    });
+
+    copyDiagBtn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(latestDiagnostics || diagPre.textContent || '');
+        copyNote.textContent = '已复制脱敏诊断信息（用户目录与凭据已隐藏）';
+      } catch {
+        copyNote.textContent = '无法访问剪贴板，请手动选中上方文本复制';
+      }
+    });
+
+    void pollStatus();
   </script>
 </body>
 </html>

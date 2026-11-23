@@ -26,23 +26,29 @@
 
 ```text
 AgentSwarm/
-├── .github/workflows/release.yml   # Windows x64 Tauri 安装包自动构建与 GitHub Release 工作流
-├── LICENSE                         # MIT 开源许可证
-├── README.md                       # 对外发布版产品说明与快速上手指南
-├── PLAN.md                         # 产品规划与 v1.0 – v1.4.0 完成记录
-├── PLAN_v1.3.md                    # v1.3 桌面端 MCP 主管直驱与双模协同开发方案（已验收）
-├── HANDOFF.md                      # 阶段验收记录与维护交接文档
-├── 启动协同看板.cmd                 # 纯 ASCII CRLF 入口，调用 scripts/start-server.ps1 无黑框启动 dist-server/index.js
-├── 停止协同看板.cmd                 # 纯 ASCII CRLF 入口，调用 scripts/stop-server.ps1 按 server.pid.json 与命令行核验停止
+├── .github/
+│   ├── ISSUE_TEMPLATE/bug_report.yml # 结构化问题反馈模板（收集版本、运行环境与脱敏诊断）
+│   └── workflows/release.yml         # Windows x64 Tauri 构建、安装包静默安装烟雾测试与 GitHub Release 工作流
+├── docs/
+│   ├── images/                       # README 与指南配图（离线导览界面 & 分栏对比弹窗）
+│   └── USAGE_GUIDE.md                # 面向新用户的完整使用教程、注意事项与 FAQ 排查
+├── LICENSE                           # MIT 开源许可证
+├── README.md                         # 对外发布版快速上手指南（含安装包对比、SHA-256 校验、双路线入门与安全准则）
+├── SECURITY.md                       # 安全默认边界与私密漏洞反馈政策
+├── PLAN.md                           # 产品规划与 v1.0 – v1.4.1 完成记录
+├── PLAN_v1.3.md                      # v1.3 桌面端 MCP 主管直驱与双模协同开发方案（已验收）
+├── HANDOFF.md                        # 阶段验收记录与维护交接文档
+├── 启动协同看板.cmd                  # 纯 ASCII CRLF 入口，调用 scripts/start-server.ps1 无黑框启动 dist-server/index.js
+├── 停止协同看板.cmd                  # 纯 ASCII CRLF 入口，调用 scripts/stop-server.ps1 按 server.pid.json 与命令行核验停止
 ├── scripts/
-│   ├── build-mcp.mjs               # esbuild 单文件自包含构建（内嵌 21 款品牌图标 + npm JS 依赖构建 dist-server/ 与 dist-mcp/*，免 node_modules 运行）
-│   ├── prepare-tauri-bundle.mjs    # 复制精简 Node 24 运行时与自包含 app 产物到 src-tauri/bundle-stage/
-│   ├── generate-tauri-icons.mjs    # 纯 Node PNG 品牌图标生成脚本（供 tauri icon 生成桌面与托盘多尺寸图标）
-│   ├── start-server.ps1            # Windows UTF-8 BOM 静默启动与 /api/health 探活脚本
-│   ├── stop-server.ps1             # Windows UTF-8 BOM 安全 PID 校验停止脚本
-│   ├── cowork-cli.mjs              # 辅助 CLI 工具脚本
-│   └── mcp_bridge_audit.mjs        # 隔离自动化回归脚本（10 项全链路审计、动态端口保护、PID 精准清理、正式 data/ 零触碰）
-├── src-tauri/                      # Tauri v2 桌面端宿主工程（系统托盘、单实例唤醒、CREATE_NO_WINDOW 内嵌服务守护与 NSIS/MSI 打包配置）
+│   ├── build-mcp.mjs                 # esbuild 单文件自包含构建（内嵌 21 款品牌图标 + npm JS 依赖构建 dist-server/ 与 dist-mcp/*，免 node_modules 运行）
+│   ├── prepare-tauri-bundle.mjs      # 复制精简 Node 24 运行时与自包含 app 产物到 src-tauri/bundle-stage/
+│   ├── generate-tauri-icons.mjs      # 纯 Node PNG 品牌图标生成脚本（供 tauri icon 生成桌面与托盘多尺寸图标）
+│   ├── start-server.ps1              # Windows UTF-8 BOM 静默启动脚本（CreateNoWindow=true + 文件描述符日志防 EPIPE）
+│   ├── stop-server.ps1               # Windows UTF-8 BOM 安全 PID 校验停止脚本
+│   ├── cowork-cli.mjs                # 辅助 CLI 工具脚本
+│   └── mcp_bridge_audit.mjs          # 隔离自动化回归脚本（11 项全链路审计、动态端口保护、PID 精准清理、正式 data/ 零触碰）
+├── src-tauri/                        # Tauri v2 桌面端宿主工程（系统托盘、单实例唤醒、多实例/端口冲突隔离、可恢复诊断与 NSIS/MSI 打包）
 ├── server/
 │   ├── index.ts                    # HTTP + WebSocket 服务入口 (端口 25880，含 /api/settings/theme、engine-defaults、panel-state 等)
 │   ├── db.ts                       # Node v24 node:sqlite 存储（默认目录在打包态自动落盘到 %LOCALAPPDATA%/AgentSwarm/data；含 host_auto_standby、ui_theme 等）
@@ -90,6 +96,6 @@ AgentSwarm/
 - 开发模式：`pnpm dev`
 - 全量构建：`pnpm build`（运行 `tsc --noEmit && vite build && node scripts/build-mcp.mjs`，同时构建前端与零 `node_modules` 依赖单文件 `dist-server/`、`dist-mcp/`）
 - Tauri 舞台整理 / 打包：`pnpm tauri:prepare`（打包节点与静态资源）/ `pnpm tauri build`（构建 Windows NSIS `.exe` 与 `.msi` 安装包）
-- 隔离回归：`pnpm exec tsx scripts/mcp_bridge_audit.mjs`（完全隔离测试数据与主目录，10 项全链路校验，不触碰正式 `data/`）
+- 隔离回归：`pnpm exec tsx scripts/mcp_bridge_audit.mjs`（完全隔离测试数据与主目录，11 项全链路校验，不触碰正式 `data/`）
 - 生产启动：`pnpm start` 或 `node dist-server/index.js`（或直接双击 `启动协同看板.cmd`，访问 `http://127.0.0.1:25880`）
 - 维护交接入口：[HANDOFF.md](./HANDOFF.md)；v1.3 演进开发方案与验收记录见 [PLAN_v1.3.md](./PLAN_v1.3.md)；历史产品规划和完成记录沿用 [PLAN.md](./PLAN.md)。

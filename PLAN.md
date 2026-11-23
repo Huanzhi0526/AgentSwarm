@@ -103,3 +103,11 @@
 - [x] **主软件与 Antigravity 插件统一 4 套主题色**：基于 CSS 变量与热力图色阶实现 **薰衣草紫（默认）/ 雾霭蓝 / 鼠尾草绿 / 樱花粉** 四色切换（`app_settings.ui_theme` + WebSocket `theme.updated` 实时广播），主界面与 `ui://cowork-board/panel.html` 保持一致视觉调性与浅/深适配；窄屏移动端将主题切换整合进左侧滑出抽屉避免顶栏挤占。
 - [x] **面向发布级产品的全站文案打磨**：统一产品定名为 **AgentSwarm**，消除早期研发测试性表述，精简弹窗引导、状态提示与新用户导览模板文案。
 - [x] **Tauri v2 桌面端打包与零 `node_modules` 自包含运行时**：`scripts/build-mcp.mjs` 内联打包全量 JS 依赖至单文件 `dist-server/index.js`、`dist-mcp/index.js`、`dist-mcp/preInvocationHook.js`；`resolveDefaultDataDir` 在安装后只读目录自动落盘到 `%LOCALAPPDATA%/AgentSwarm/data`（本地源码环境继续沿用 `./data`）；`src-tauri/` 提供单实例窗口激活、系统托盘、关闭最小化托盘、无黑框内嵌 Node 24 服务守护及 GitHub Actions 自动构建 `.exe` / `.msi` GitHub Release。
+
+## 八、 v1.4.1 安全加固、桌面多实例隔离与体验/文档发布打磨（已完成）
+
+- [x] **默认仅本机访问（P0）**：`server/index.ts` 默认只监听 `127.0.0.1`；`server/auth/pairingGuard.ts` 默认 `remoteAccessEnabled = false` 与 `requirePinOnLan = true`，采用 SHA-256 持久化已配对设备列表（支持单台移除与全量撤销）及动态按所选网卡绑定/关闭远程端口；前端 `MobileConnectModal.tsx` 与 `PairingLockScreen.tsx` 清晰区分本机/局域网/组网条件。
+- [x] **消除 Windows 后台终端闪窗（`CREATE_NO_WINDOW`）**：清理 `server/mcp/index.ts`、`workspaceExplorer.ts`（换用 `rundll32.exe` 打开常规文件）、`cliRunner.ts` 中 Windows 下绕过 `CREATE_NO_WINDOW` 的 `detached: true` 用法；`quotaFetcher.ts` 移除每 10 分钟无感轮询弹出 `agy.exe`，延长被动缓存至 6 小时；`start-server.ps1` 切换为无窗口拉起。
+- [x] **桌面端实例身份识别、端口冲突隔离与可恢复诊断**：`/api/health` 返回服务标识、`version` 与本机 `dataDir`；`src-tauri/src/lib.rs` 发现 25880 被其他目录实例占用时自动转到 25881+ 独立启动并在 `boot-ui/index.html` 提供选择，捕获服务 stderr 日志支持「重启本地服务」与「查看/复制脱敏诊断」。
+- [x] **建板首条消息共用引擎拦截、目录安全防护与三向冲突明确回执**：`NewBoardModal.tsx` 转为 3 步递进式表单（默认打开用户「文档」目录并拦截根目录/系统目录/软件目录；支持一键创建练习文件夹）；未装主管引擎时保留 `pendingInitialDraft` 至输入框并统一禁用按钮；`swarmBus.ts` 区分未安装/需登录/执行失败三态；`DiffCompareModal.tsx` 与交付卡明确展示保留较新修改结果及保护快照入口。
+- [x] **完整用户文档、配图与 Release 工程化完善**：新增 `docs/USAGE_GUIDE.md`、真实导览与对比截图、`SECURITY.md`、Issue 模板、升级版 `README.md` 与 GitHub Release 安装包静默安装烟雾验证步骤。

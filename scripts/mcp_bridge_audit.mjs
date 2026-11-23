@@ -841,6 +841,18 @@ if (engine === 'codex') {
     });
     assert.equal(strictRev.status, 409, 'Strict revert must detect newer external edit conflict');
 
+    const skipRev = await fetch(`http://127.0.0.1:${TEST_PORT}/api/snapshots/${legSnap.id}/revert`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: 'skip_conflicts' }),
+    });
+    assert.equal(skipRev.status, 200);
+    const skipJson = await skipRev.json();
+    assert.equal(skipJson.restoredCount, 0);
+    assert.equal(skipJson.skippedConflicts, 1);
+    assert.deepEqual(skipJson.skippedFiles, ['src/api.ts']);
+    assert.equal(skipJson.snapshot?.lastRevertOutcome?.skippedFiles?.[0], 'src/api.ts');
+
     const overRev = await fetch(`http://127.0.0.1:${TEST_PORT}/api/snapshots/${legSnap.id}/revert`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -849,12 +861,14 @@ if (engine === 'codex') {
     assert.equal(overRev.status, 200);
     const overJson = await overRev.json();
     assert.ok(overJson.protectionSnapshot?.kind === 'pre_overwrite_backup');
+    assert.deepEqual(overJson.restoredFiles, ['src/api.ts']);
+    assert.equal(overJson.snapshot?.lastRevertOutcome?.protectionSnapshotId, overJson.protectionSnapshot.id);
     assert.equal(
       sha1(fs.readFileSync(path.join(legacyWs, 'src', 'api.ts'), 'utf8')),
       sha1(origContent),
       'Reverted file SHA-1 must match original content'
     );
-    console.log('[PASS] Check 7: Legacy leaderMode=cli + 3-way snapshot conflict & revert SHA-1 verified');
+    console.log('[PASS] Check 7: Legacy leaderMode=cli + 3-way snapshot conflict, skip/overwrite outcome & revert SHA-1 verified');
 
     // --- CHECK 9: Engine Default Configs + Panel Auto-Forward Claim/Ack Bridge ---
     const putDefRes = await fetch(`http://127.0.0.1:${TEST_PORT}/api/settings/engine-defaults/codex`, {
@@ -1055,6 +1069,126 @@ if (engine === 'codex') {
     assert.equal(panelTheme.uiTheme, 'green');
     console.log(
       `[PASS] Check 10: Auto-standby directive, immediate release (${releaseMs}ms) & 4-theme sync verified`
+    );
+
+    // --- CHECK 11: v1.4.1 P0 localhost-only default + instance identity + safe dir + initialDraft guard ---
+    const health11 = await (await fetch(`http://127.0.0.1:${TEST_PORT}/api/health`)).json();
+    assert.equal(health11.service, 'agent-swarm');
+    assert.equal(health11.version, '1.4.1');
+    assert.equal(path.resolve(health11.dataDir), path.resolve(dataDir));
+
+    const authInit = await (await fetch(`http://127.0.0.1:${TEST_PORT}/api/auth/status`)).json();
+    assert.equal(authInit.remoteAccessEnabled, false, 'Fresh DB must default to localhost-only');
+    assert.equal(authInit.requirePinOnLan, true, 'Fresh DB must default to requirePinOnLan=true');
+
+    // Test real remote socket blocking when LAN/non-localhost endpoint exists
+    const qrInit = await (await fetch(`http://127.0.0.1:${TEST_PORT}/api/mobile-qr`)).json();
+    const firstRemoteEp = (qrInit.endpoints || []).find((e) => e.kind !== 'localhost');
+    if (firstRemoteEp) {
+      let remoteBlockedOk = false;
+      try {
+        const blockedResp = await fetch(`${firstRemoteEp.url}/api/boards`, {
+          signal: AbortSignal.timeout(1500),
+        });
+        remoteBlockedOk = blockedResp.status === 403 || blockedResp.status === 401;
+      } catch {
+        // ECONNREFUSED because server intentionally does NOT listen on non-127.0.0.1 when disabled!
+        remoteBlockedOk = true;
+      }
+      assert.equal(remoteBlockedOk, true, 'Remote endpoint must refuse connections while remoteAccessEnabled=false');
+    }
+
+    // Enable remote access, pair a device, revoke single device, then disable remote access again
+    const enRes = await fetch(`http://127.0.0.1:${TEST_PORT}/api/auth/config`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ remoteAccessEnabled: true, allowedRemoteHost: 'all' }),
+    });
+    assert.equal(enRes.status, 200);
+    const enCfg = await enRes.json();
+    assert.equal(enCfg.remoteAccessEnabled, true);
+
+    const unlockRes = await fetch(`http://127.0.0.1:${TEST_PORT}/api/auth/unlock`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pinCode: enCfg.pinCode, deviceLabel: 'Audit-Phone' }),
+    });
+    assert.equal(unlockRes.status, 200);
+    const unlockJson = await unlockRes.json();
+    assert.ok(unlockJson.token && unlockJson.device?.id);
+
+    if (firstRemoteEp) {
+      const unauthRemote = await fetch(`${firstRemoteEp.url}/api/boards`);
+      assert.equal(unauthRemote.status, 401, 'Remote access without paired token must get 401');
+      const authRemote = await fetch(`${firstRemoteEp.url}/api/boards`, {
+        headers: { 'x-cowork-auth': unlockJson.token },
+      });
+      assert.equal(authRemote.status, 200, 'Paired token must succeed on enabled remote endpoint');
+    }
+
+    const revOne = await fetch(`http://127.0.0.1:${TEST_PORT}/api/auth/config`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ revokeDeviceId: unlockJson.device.id }),
+    });
+    assert.equal(revOne.status, 200);
+    const revOneJson = await revOne.json();
+    assert.equal(revOneJson.pairedDevices.length, 0);
+
+    const disRes = await fetch(`http://127.0.0.1:${TEST_PORT}/api/auth/config`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ remoteAccessEnabled: false }),
+    });
+    assert.equal(disRes.status, 200);
+
+    // Safe folder picker default & blocked unsafe paths
+    const defaultBrowse = await (await fetch(`http://127.0.0.1:${TEST_PORT}/api/fs/browse`)).json();
+    assert.notEqual(
+      path.resolve(defaultBrowse.currentPath).toLowerCase(),
+      path.resolve(REPO_ROOT).toLowerCase(),
+      'Folder picker default must NOT open software repo/install directory'
+    );
+    const unsafeBrowse = await (
+      await fetch(`http://127.0.0.1:${TEST_PORT}/api/fs/browse?path=${encodeURIComponent(REPO_ROOT)}`)
+    ).json();
+    assert.ok(unsafeBrowse.unsafeReason, 'Browsing software root must surface unsafeReason');
+
+    const badBoardRes = await fetch(`http://127.0.0.1:${TEST_PORT}/api/boards`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: 'BlockedDirTest',
+        workspacePath: REPO_ROOT,
+        presetId: 'free-collab',
+      }),
+    });
+    assert.equal(badBoardRes.status, 400, 'Creating board directly in software repo root must be blocked');
+
+    // Uninstalled leader + initialDirective should preserve draft instead of firing failed error post
+    const safeNewWs = path.join(tmpRoot, 'safe-uninstalled-ws');
+    fs.mkdirSync(safeNewWs, { recursive: true });
+    const pendingRes = await fetch(`http://127.0.0.1:${TEST_PORT}/api/boards`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: 'UninstalledLeaderDraftGuard',
+        workspacePath: safeNewWs,
+        presetId: 'free-collab',
+        customMembers: [{ slotId: 'lead', displayName: '未装主管', isLeader: true, engine: 'cursor' }],
+        initialDirective: 'Keep this message in draft until engine ready',
+      }),
+    });
+    assert.equal(pendingRes.status, 201);
+    const pendingJson = await pendingRes.json();
+    assert.equal(pendingJson.pendingInitialDraft, 'Keep this message in draft until engine ready');
+    assert.equal(pendingJson.pendingReason, 'leader_engine_uninstalled');
+    const pendingSnap = await (
+      await fetch(`http://127.0.0.1:${TEST_PORT}/api/boards/${pendingJson.id}/snapshot`)
+    ).json();
+    assert.equal(pendingSnap.posts.length, 0, 'Uninstalled leader must NOT post a failed error round on creation');
+    console.log(
+      '[PASS] Check 11: Localhost-only default, token pairing/revocation, safe workspace guard & initial-draft protection verified'
     );
 
     const formalAfter = snapshotDirStats(FORMAL_DATA_DIR);

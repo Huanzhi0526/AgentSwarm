@@ -1,0 +1,57 @@
+name: 问题反馈 (Bug Report)
+description: 反馈 AgentSwarm 使用过程中的异常、兼容性问题或界面故障
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢您的反馈！提交前建议先查看 [使用教程与常见问题](../../blob/main/docs/USAGE_GUIDE.md)。**请勿在表单中粘贴个人 API Key、账号密码、连接码或私密项目源码**；桌面端启动故障请优先使用启动页自带的「复制脱敏诊断」。
+  - type: input
+    id: version
+    attributes:
+      label: AgentSwarm 版本号
+      description: 可在左下角状态栏或安装文件名中查看（例如 v1.4.1）
+      placeholder: v1.4.1
+    validations:
+      required: true
+  - type: dropdown
+    id: install_mode
+    attributes:
+      label: 运行方式
+      options:
+        - Windows NSIS 安装包 (.exe)
+        - Windows MSI 安装包 (.msi)
+        - 仓库源码运行 (pnpm start / pnpm dev)
+    validations:
+      required: true
+  - type: input
+    id: os_arch
+    attributes:
+      label: 操作系统与架构
+      placeholder: Windows 11 x64 (23H2 / 24H2)
+    validations:
+      required: true
+  - type: input
+    id: client_cli
+    attributes:
+      label: 涉及的桌面宿主或 CLI 工具（如适用）
+      description: 例如 Antigravity / CodeX / CodeBuddy / Claude Code / 无 CLI 离线导览
+      placeholder: Antigravity + CodeX CLI
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤与实际现象
+      description: 请描述操作顺序、界面提示或出错行为
+      placeholder: |
+        1. 打开桌面端后...
+        2. 选择工作区目录并点击...
+        3. 实际出现了...
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: 脱敏诊断信息或错误日志（选填）
+      description: 可粘贴启动页「复制脱敏诊断」或手动去除用户名/路径隐私后的报错文本
+      render: text

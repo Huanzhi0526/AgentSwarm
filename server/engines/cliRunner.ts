@@ -24,13 +24,42 @@ export interface CliTurnResult {
   durationMs: number;
 }
 
-function getBinaryForEngine(engine: AgentSlot['engine']): string | null {
+export function getBinaryForEngine(engine: AgentSlot['engine']): string | null {
   if (engine === 'demo') return null;
   const home = os.homedir();
   const localAppData = process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local');
   const appData = process.env.APPDATA || path.join(home, 'AppData', 'Roaming');
   const cat = getCatalogItem(engine);
   return detectCliBinary(cat.binaryCandidates(home, localAppData, appData), true).binaryPath;
+}
+
+export function classifyCliFailure(
+  engineName: string,
+  rawError: string
+): {
+  kind: 'engine_uninstalled' | 'auth_required' | 'execution_failed';
+  summary: string;
+} {
+  if (/尚未安装|not found|ENOENT/i.test(rawError)) {
+    return {
+      kind: 'engine_uninstalled',
+      summary: `当前电脑未安装 ${engineName}，请先在右栏将该成员切换为已安装引擎后再试。`,
+    };
+  }
+  if (
+    /not logged in|login required|please log in|unauthorized|authentication|invalid[_ ]?api[_ ]?key|missing api key|\b401\b|\bsign in\b|请先登录|未登录/i.test(
+      rawError
+    )
+  ) {
+    return {
+      kind: 'auth_required',
+      summary: `已检测到 ${engineName}，但尚未完成账号登录或 API 密钥配置（${rawError.slice(0, 140)}）。请在终端登录该工具或切换至其他已登录成员后重发。`,
+    };
+  }
+  return {
+    kind: 'execution_failed',
+    summary: rawError,
+  };
 }
 
 function quoteCmdArg(arg: string): string {
@@ -657,7 +686,7 @@ export function openInteractiveAgentSession(params: {
         COWORK_OPEN_CWD: workingDir,
         COWORK_OPEN_CMD: cmdLine,
       }),
-      detached: true,
+      detached: false,
       windowsHide: true,
       stdio: 'ignore',
     }

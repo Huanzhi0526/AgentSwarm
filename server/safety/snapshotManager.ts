@@ -5,6 +5,7 @@ import type {
   FileChangeItem,
   SnapshotConflictItem,
   SnapshotDiffDetail,
+  SnapshotRevertOutcome,
   WorkspaceSnapshot,
 } from '../../src/types.js';
 import { DATA_DIR, db } from '../db.js';
@@ -189,6 +190,7 @@ function parseSnapshotMeta(row: Record<string, unknown>): {
   skippedCount?: number;
   skippedSummary?: string;
   postCheckpointAddedCount?: number;
+  lastRevertOutcome?: SnapshotRevertOutcome | null;
 } {
   try {
     return JSON.parse(String(row.meta_json || '{}'));
@@ -212,6 +214,7 @@ function mapSnapshotRow(row: Record<string, unknown>): WorkspaceSnapshot {
     skippedCount: meta.skippedCount || undefined,
     skippedSummary: meta.skippedSummary || undefined,
     postCheckpointAddedCount: meta.postCheckpointAddedCount,
+    lastRevertOutcome: meta.lastRevertOutcome ?? null,
     createdAt: Number(row.created_at),
   };
 }
@@ -614,6 +617,8 @@ export interface RevertSnapshotResult {
   protectionSnapshot?: WorkspaceSnapshot | null;
   restoredCount: number;
   skippedConflicts: number;
+  restoredFiles?: string[];
+  skippedFiles?: string[];
   postCheckpointAddedCount?: number;
 }
 
@@ -655,6 +660,7 @@ export function revertSnapshotToDisk(
     }
 
     let restoredCount = 0;
+    const restoredFiles: string[] = [];
     const failedPaths: string[] = [];
 
     if (fs.existsSync(beforeDir) && fs.existsSync(workspacePath)) {
@@ -669,6 +675,7 @@ export function revertSnapshotToDisk(
             failedPaths.push(rel);
           } else {
             restoredCount += 1;
+            restoredFiles.push(rel);
           }
         } catch {
           failedPaths.push(rel);
@@ -688,9 +695,17 @@ export function revertSnapshotToDisk(
       status: 'modified',
     }));
     const prevMeta = parseSnapshotMeta(row);
+    const outcome: SnapshotRevertOutcome = {
+      mode: mode || 'strict',
+      at: Date.now(),
+      restoredFiles,
+      skippedFiles: [],
+      protectionSnapshotId: protectionSnapshot?.id ?? null,
+    };
     const nextMetaJson = JSON.stringify({
       ...prevMeta,
       postCheckpointAddedCount,
+      lastRevertOutcome: outcome,
     });
 
     db.prepare(
@@ -708,6 +723,8 @@ export function revertSnapshotToDisk(
       protectionSnapshot,
       restoredCount,
       skippedConflicts: 0,
+      restoredFiles,
+      skippedFiles: [],
       postCheckpointAddedCount,
     };
   }
@@ -737,12 +754,15 @@ export function revertSnapshotToDisk(
 
   let restoredCount = 0;
   let skippedConflicts = 0;
+  const restoredFiles: string[] = [];
+  const skippedFiles: string[] = [];
   const failedPaths: string[] = [];
 
   if (fs.existsSync(workspacePath)) {
     for (const ch of snapshot.filesChanged) {
       if (mode === 'skip_conflicts' && conflictPaths.has(ch.path)) {
         skippedConflicts += 1;
+        skippedFiles.push(ch.path);
         continue;
       }
 
@@ -757,9 +777,11 @@ export function revertSnapshotToDisk(
               failedPaths.push(ch.path);
             } else {
               restoredCount += 1;
+              restoredFiles.push(ch.path);
             }
           } else if (!fs.existsSync(targetFile)) {
             restoredCount += 1;
+            restoredFiles.push(ch.path);
           }
         } else if (ch.status === 'modified' || ch.status === 'deleted') {
           if (!fs.existsSync(backupFile)) {
@@ -772,6 +794,7 @@ export function revertSnapshotToDisk(
             failedPaths.push(ch.path);
           } else {
             restoredCount += 1;
+            restoredFiles.push(ch.path);
           }
         }
       } catch {
@@ -784,8 +807,29 @@ export function revertSnapshotToDisk(
     throw new Error(`撤回写回失败（文件可能正被占用）：${failedPaths.slice(0, 5).join('、')}`);
   }
 
+  const prevMeta = parseSnapshotMeta(row);
+  const outcome: SnapshotRevertOutcome = {
+    mode: mode || 'strict',
+    at: Date.now(),
+    restoredFiles,
+    skippedFiles,
+    protectionSnapshotId: protectionSnapshot?.id ?? null,
+  };
+  const nextMetaJson = JSON.stringify({
+    ...prevMeta,
+    lastRevertOutcome: outcome,
+  });
+
   if (restoredCount > 0 || (skippedConflicts === 0 && snapshot.filesChanged.length === 0)) {
-    db.prepare("UPDATE workspace_snapshots SET status = 'reverted' WHERE id = ?").run(snapshotId);
+    db.prepare("UPDATE workspace_snapshots SET status = 'reverted', meta_json = ? WHERE id = ?").run(
+      nextMetaJson,
+      snapshotId
+    );
+  } else {
+    db.prepare('UPDATE workspace_snapshots SET meta_json = ? WHERE id = ?').run(
+      nextMetaJson,
+      snapshotId
+    );
   }
 
   const updatedSnap = mapSnapshotRow(
@@ -798,5 +842,7 @@ export function revertSnapshotToDisk(
     protectionSnapshot,
     restoredCount,
     skippedConflicts,
+    restoredFiles,
+    skippedFiles,
   };
 }

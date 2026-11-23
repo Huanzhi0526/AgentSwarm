@@ -195,6 +195,9 @@ export interface DeliverableMeta {
   }>;
   durationMs?: number;
   tokensUsed?: number;
+  isError?: boolean;
+  errorKind?: 'engine_uninstalled' | 'auth_required' | 'execution_failed';
+  sourceHumanText?: string;
 }
 
 export interface BoardPost {
@@ -226,6 +229,14 @@ export interface BoardTask {
   updatedAt: number;
 }
 
+export interface SnapshotRevertOutcome {
+  mode: 'strict' | 'skip_conflicts' | 'overwrite_all';
+  at: number;
+  restoredFiles: string[];
+  skippedFiles: string[];
+  protectionSnapshotId?: string | null;
+}
+
 export interface WorkspaceSnapshot {
   id: string;
   boardId: string;
@@ -238,6 +249,7 @@ export interface WorkspaceSnapshot {
   skippedCount?: number;
   skippedSummary?: string;
   postCheckpointAddedCount?: number;
+  lastRevertOutcome?: SnapshotRevertOutcome | null;
   createdAt: number;
 }
 
@@ -370,6 +382,7 @@ export interface WorkbenchOverview {
   turnsAreEstimated?: boolean;
   quotaUpdatedAt?: number | null;
   uiTheme?: AppThemeId;
+  remoteAccessEnabled?: boolean;
   orchestrationPreferences?: OrchestrationPreferences;
   heatmap: HeatmapCell[];
   engines: EngineStatusCard[];
@@ -377,8 +390,19 @@ export interface WorkbenchOverview {
   endpoints: NetworkEndpoint[];
 }
 
+export interface PairedDeviceSummary {
+  id: string;
+  label: string;
+  ip: string;
+  pairedAt: number;
+  lastSeenAt: number;
+}
+
 export interface PairingConfig {
+  remoteAccessEnabled: boolean;
+  allowedRemoteHost: string;
   requirePinOnLan: boolean;
   pinCode: string;
   pairToken: string;
+  pairedDevices: PairedDeviceSummary[];
 }

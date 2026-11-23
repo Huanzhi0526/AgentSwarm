@@ -35,6 +35,76 @@ export interface BrowseDirsResponse {
   directories: DirectoryEntryItem[];
   totalDirectories: number;
   truncated: boolean;
+  unsafeReason: string | null;
+}
+
+export function normalizeCmpPath(raw: string): string {
+  const cleaned = path.resolve(raw).replace(/[\\/]+$/, '');
+  return process.platform === 'win32' ? cleaned.toLowerCase() : cleaned;
+}
+
+export function validateWorkspaceDirectory(
+  targetPath: string,
+  extraRestrictedRoots: string[] = []
+): string | null {
+  let resolved = '';
+  try {
+    resolved = path.resolve(targetPath.trim());
+  } catch {
+    return '文件夹路径格式无效';
+  }
+  const cmp = normalizeCmpPath(resolved);
+  const parsedRoot = normalizeCmpPath(path.parse(resolved).root);
+  if (cmp === parsedRoot) {
+    return '为防止误扫描整个磁盘，请选择具体的项目子文件夹（不能直接使用磁盘根目录）';
+  }
+
+  if (process.platform === 'win32') {
+    const winDir = normalizeCmpPath(process.env.WINDIR || 'C:\\Windows');
+    const progFiles = normalizeCmpPath(process.env.ProgramFiles || 'C:\\Program Files');
+    const progFiles86 = normalizeCmpPath(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)');
+    for (const sysRoot of [winDir, progFiles, progFiles86]) {
+      if (cmp === sysRoot || cmp.startsWith(`${sysRoot}\\`)) {
+        return '不能选择 Windows 系统目录或程序安装目录作为智能体工作区';
+      }
+    }
+    const execDir = normalizeCmpPath(path.dirname(process.execPath));
+    const installParent = normalizeCmpPath(path.resolve(execDir, '..'));
+    if (
+      execDir.includes('\\agentswarm') &&
+      (cmp === execDir ||
+        cmp.startsWith(`${execDir}\\`) ||
+        cmp === installParent ||
+        cmp.startsWith(`${installParent}\\`))
+    ) {
+      return '不能选择 AgentSwarm 软件安装目录，请在「文档」或代码目录下选择/新建项目文件夹';
+    }
+  }
+
+  for (const r of extraRestrictedRoots) {
+    if (!r) continue;
+    const rCmp = normalizeCmpPath(r);
+    if (!rCmp) continue;
+    const sep = process.platform === 'win32' ? '\\' : '/';
+    if (cmp === rCmp || cmp.startsWith(`${rCmp}${sep}data`) || cmp.includes(`${sep}bundle-stage`)) {
+      return '请为你的任务选择独立项目文件夹（避免直接选定 AgentSwarm 软件运行目录或数据库目录）';
+    }
+  }
+
+  return null;
+}
+
+function resolveDefaultBrowseStart(): string {
+  const home = os.homedir();
+  const candidates = [path.join(home, 'Documents'), path.join(home, 'Desktop'), home];
+  for (const c of candidates) {
+    try {
+      if (fs.existsSync(c) && fs.statSync(c).isDirectory()) return c;
+    } catch {
+      // try next
+    }
+  }
+  return home;
 }
 
 export function listQuickRoots(): QuickRootItem[] {
@@ -73,11 +143,15 @@ export function listQuickRoots(): QuickRootItem[] {
   return roots;
 }
 
-export function browseDirectories(requestedPath?: string, filterQuery?: string): BrowseDirsResponse {
-  const fallback = process.cwd();
+export function browseDirectories(
+  requestedPath?: string,
+  filterQuery?: string,
+  restrictedRoots: string[] = []
+): BrowseDirsResponse {
+  const fallback = resolveDefaultBrowseStart();
   let currentPath = requestedPath?.trim() ? path.resolve(requestedPath.trim()) : fallback;
   if (!fs.existsSync(currentPath)) {
-    currentPath = os.homedir();
+    currentPath = fallback;
   }
   try {
     if (!fs.statSync(currentPath).isDirectory()) {
@@ -127,6 +201,7 @@ export function browseDirectories(requestedPath?: string, filterQuery?: string):
     directories: limited,
     totalDirectories,
     truncated: totalDirectories > MAX_BROWSE_DIRS,
+    unsafeReason: validateWorkspaceDirectory(currentPath, restrictedRoots),
   };
 }
 
@@ -149,7 +224,8 @@ export function createSubDirectory(parentDir: string, folderName: string): strin
 export async function pickNativeWindowsFolder(initialPath?: string): Promise<string | null> {
   if (process.platform !== 'win32') return null;
 
-  const safeInit = initialPath && fs.existsSync(initialPath) ? path.resolve(initialPath) : process.cwd();
+  const safeInit =
+    initialPath && fs.existsSync(initialPath) ? path.resolve(initialPath) : resolveDefaultBrowseStart();
   const escapedInit = safeInit.replace(/'/g, "''");
 
   const psScript = `
@@ -465,7 +541,7 @@ export function openPathOnHost(targetFullPath: string, revealInFolder = false): 
   if (process.platform === 'win32') {
     if (revealInFolder && st.isFile()) {
       const child = spawn('explorer.exe', [`/select,${targetFullPath}`], {
-        detached: true,
+        detached: false,
         stdio: 'ignore',
         windowsHide: true,
       });
@@ -474,23 +550,19 @@ export function openPathOnHost(targetFullPath: string, revealInFolder = false): 
     }
     if (st.isDirectory()) {
       const child = spawn('explorer.exe', [targetFullPath], {
-        detached: true,
+        detached: false,
         stdio: 'ignore',
         windowsHide: true,
       });
       child.unref();
       return;
     }
-    const child = spawn(
-      process.env.ComSpec || 'cmd.exe',
-      ['/d', '/s', '/c', `"start "" "${targetFullPath}""`],
-      {
-        detached: true,
-        stdio: 'ignore',
-        windowsVerbatimArguments: true,
-        windowsHide: true,
-      }
-    );
+    // Native GUI handler avoids spawning a flashing cmd.exe console window
+    const child = spawn('rundll32.exe', ['url.dll,FileProtocolHandler', targetFullPath], {
+      detached: false,
+      stdio: 'ignore',
+      windowsHide: true,
+    });
     child.unref();
   }
 }

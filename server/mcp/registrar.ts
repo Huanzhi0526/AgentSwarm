@@ -246,52 +246,81 @@ export function listDesktopMcpClients(options?: RegistrarOptions): DesktopMcpCli
   const { homeDir, skipBinaryDetect } = resolveOptions(options);
   const paths = getClientPaths(homeDir);
 
+  const agyInstalled = detectClientInstalled('antigravity', homeDir, skipBinaryDetect);
+  const agyRegistered = hasJsonMcpEntry(paths.antigravity.configPath);
+  const agyHookReady = hasAntigravityHookEntry(paths.antigravity.hooksPath);
+
+  const codexInstalled = detectClientInstalled('codex', homeDir, skipBinaryDetect);
+  const codexRegistered = hasCodexTomlRegistration(paths.codex.configPath);
+
+  const cbInstalled = detectClientInstalled('codebuddy', homeDir, skipBinaryDetect);
+  const cbRegistered = hasJsonMcpEntry(paths.codebuddy.configPath);
+
+  const claudeInstalled = detectClientInstalled('claude', homeDir, skipBinaryDetect);
+  const claudeRegistered = hasJsonMcpEntry(paths.claude.configPath);
+
   return [
     {
       id: 'antigravity',
       name: 'Antigravity',
       engine: 'antigravity',
-      installed: detectClientInstalled('antigravity', homeDir, skipBinaryDetect),
-      registered: hasJsonMcpEntry(paths.antigravity.configPath),
-      hookRegistered: hasAntigravityHookEntry(paths.antigravity.hooksPath),
+      installed: agyInstalled,
+      registered: agyRegistered,
+      hookRegistered: agyHookReady,
       supportsHook: true,
       configPath: paths.antigravity.configPath,
       hookPath: paths.antigravity.hooksPath,
       backupExists: fs.existsSync(`${paths.antigravity.configPath}.bak-cowork`),
-      hint: '接入后请在 Antigravity 的 MCP Servers 开关中确认开启（或刷新一次）；支持右侧分栏 MCP App 与闲置留言自动注入。',
+      hint: agyRegistered
+        ? '已写入 Antigravity 配置；若工具列表未显示，请在 Antigravity 的 MCP 面板刷新一次，并可打开右侧看板分栏。'
+        : agyInstalled
+          ? '已检测到 Antigravity；点击右侧接入即可注册看板 MCP 与可选闲置留言 Hook。'
+          : '未在本机检测到 Antigravity；若已便携安装也可先预写入配置。',
     },
     {
       id: 'codex',
       name: 'CodeX',
       engine: 'codex',
-      installed: detectClientInstalled('codex', homeDir, skipBinaryDetect),
-      registered: hasCodexTomlRegistration(paths.codex.configPath),
+      installed: codexInstalled,
+      registered: codexRegistered,
       supportsHook: false,
       configPath: paths.codex.configPath,
       backupExists: fs.existsSync(`${paths.codex.configPath}.bak-cowork`),
-      hint: '已自动配置 tool_timeout_sec = 3600 防止长波次等待超时，新开 CodeX 对话立即生效。',
+      hint: codexRegistered
+        ? '已写入 CodeX 配置（含 tool_timeout_sec = 3600 长波次等待超时）；新开 CodeX 对话后生效。'
+        : codexInstalled
+          ? '已检测到 CodeX；点击一键接入时将自动追加 tool_timeout_sec = 3600 防止等待超时。'
+          : '未在本机检测到 CodeX；接入后会预先创建或更新 ~/.codex/config.toml。',
     },
     {
       id: 'codebuddy',
       name: 'CodeBuddy',
       engine: 'codebuddy',
-      installed: detectClientInstalled('codebuddy', homeDir, skipBinaryDetect),
-      registered: hasJsonMcpEntry(paths.codebuddy.configPath),
+      installed: cbInstalled,
+      registered: cbRegistered,
       supportsHook: false,
       configPath: paths.codebuddy.configPath,
       backupExists: fs.existsSync(`${paths.codebuddy.configPath}.bak-cowork`),
-      hint: '接入后在 CodeBuddy 新开对话即可调用看板团队工具，支持等待期实时插话回传。',
+      hint: cbRegistered
+        ? '已写入 CodeBuddy 配置；新开对话调用看板 MCP 并开启「自动监听」后可保持待命唤醒。'
+        : cbInstalled
+          ? '已检测到 CodeBuddy；点击接入后新开对话即可使用看板团队工具。'
+          : '未在本机检测到 CodeBuddy；点击「预写入配置」可预先写入 MCP 条目。',
     },
     {
       id: 'claude',
       name: 'Claude Code',
       engine: 'claude',
-      installed: detectClientInstalled('claude', homeDir, skipBinaryDetect),
-      registered: hasJsonMcpEntry(paths.claude.configPath),
+      installed: claudeInstalled,
+      registered: claudeRegistered,
       supportsHook: false,
       configPath: paths.claude.configPath,
       backupExists: fs.existsSync(`${paths.claude.configPath}.bak-cowork`),
-      hint: '写入用户级 ~/.claude.json 的 mcpServers，保留你原有的项目配置与全部其他 MCP 服务。',
+      hint: claudeRegistered
+        ? '已写入 ~/.claude.json 的 mcpServers（保留原有配置）；新开会话后即可启用。'
+        : claudeInstalled
+          ? '已检测到 Claude Code；接入时仅向 ~/.claude.json 增量添加 AgentSwarm MCP 条目。'
+          : '未在本机检测到 Claude Code；可点击「预写入配置」预先生成用户级 MCP 配置。',
     },
   ];
 }

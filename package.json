@@ -1,6 +1,6 @@
 {
   "name": "agent-swarm",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "private": true,
   "type": "module",
   "description": "Local-first multi-agent Swarm board unifying Antigravity, Codex, CodeBuddy, Claude Code, and 20 CLI agents with Tauri desktop & mobile WebUI",

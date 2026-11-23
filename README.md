@@ -1,78 +1,120 @@
 # AgentSwarm
 
-**AgentSwarm** 是一款本地优先（Local-First）的多智能体群聊式协同看板、桌面端 MCP 主管调度中枢与额度工作台，提供开箱即用的 **Windows 桌面端应用（Tauri v2）** 与 **局域网 / 手机端实时 Web 协同界面**，完整兼容并收录 **20 款主流 CLI 智能体**：
+**AgentSwarm** 是一款本地优先（Local-First）的多智能体群聊式协同看板、桌面端 MCP 主管调度中枢与额度工作台（Windows 桌面应用 + 局域网/手机协同界面）。
 
-> **Antigravity** · **CodeX** · **CodeBuddy** · **Claude Code** · Gemini CLI · Qwen Code · OpenCode · Cursor · Copilot CLI · Kimi CLI · Auggie · Goose · Droid · Qoder · Mistral Vibe · Kiro · Hermes · Snow · OpenClaw · Nanobot
+> **一句话看懂它能做什么**：把分散在终端或桌面窗口里的多个 AI 编程助手（Antigravity、CodeX、CodeBuddy、Claude Code 等）收拢到同一个群聊看板里协作分工，自动在改动前备份代码并支持分栏 Diff 预览与防冲突撤回。
 
----
-
-## 核心特性
-
-### 1. 桌面端 MCP 主管直驱 + 看板 CLI 双模协同
-- **双模无缝并存**：既可直接在桌面 AI 客户端（**Antigravity、CodeX、CodeBuddy、Claude Code**）中由主对话担任“团队主管”统筹全局，也可切换为看板独立驱动后台 CLI 团队，两种模式随时互补。
-- **自动挂起监听（0 Token 待命）**：看板内置 MCP `instructions`、工具契约与 `cowork_standby_mode` 提示词规范，桌面端主管在工具返回后会自动调用 `cowork_wait_board(waitForNewActivity=true)` 进入零轮询阻塞监听；监听期间不空耗额外额度，网页或手机端随时发送 `@主管` 留言均可秒级唤醒并附带客观工作区文件改动证据包。
-- **可控监听与兜底接管**：看板顶栏提供一键 **「自动监听：开 / 关」**（关闭时立即释放所有挂起监听）与 **「闲置时 CLI 主管代答」** 开关，兼顾自动化与手动节奏控制。
-- **Antigravity 原生右侧栏插件（MCP App）与 Hook**：通过官方 `ui://cowork-board/panel.html` 在 Antigravity 右侧边栏原生渲染看板对话、成员与任务、改动备份三段视图，支持「自动唤醒左侧」通过官方 `app.sendMessage()` 直达主对话；配合可独立启停的 `PreInvocation` Hook，在闲置下轮发话时自动带入未读留言。
-
-### 2. 工作台统一调度与 20 款智能体模型预设
-- **引擎默认档位预设**：在工作台为 20 款智能体逐一预设默认模型与**模型原生思考强度**（`low` / `medium` / `high` / `xhigh` / `max` / `ultra`），新建看板、调整成员或 MCP 建板时自动继承。
-- **自由组队与波次屏障**：支持「自由协同」与多种内置专业团队模板，开工前后可随时增删成员、切换主管、编辑团队规则（自动优先选用本机已安装引擎）；多成员并行时自动等待整波次完成后汇总，支持任务依赖（`blockedBy`）自动解锁与点击 `@成员` 查看双人往来记录。
-- **真实额度监控与热力图**：本地只读扫描会话日志生成可聚焦活跃热力图，实时读取 **Antigravity**（`Gemini 5h / 周`、`Claude 5h / 周`）与 **CodeX**（`5h / 周`）官方剩余额度与重置倒计时，支持多账号槽位保存与一键切号。
-
-### 3. 安全代码快照与三向防冲突撤回
-- **全自动改动保护**：每轮智能体交付前自动记录工作区快照，命令行异常退出时同样捕获保护快照；聊天气泡与右侧备份栏支持分栏 **「对比改动」**、**「采纳保留」**、**「一键撤回」** 与随时新建手动检查点。
-- **三向冲突检测**：当磁盘文件存在较新人工修改时，撤回前自动提示并支持「保留较新修改」或「备份当前改动后再还原」，避免误覆写工作成果。
-- **隔离预览与图形选目录**：HTML 交付产物通过无宿主凭证权限的独立隔离沙盒渲染，兼容 Markdown / 图片 / PDF / 代码预览；内置高响应图形化目录选择器与系统原生选文件夹窗口。
-
-### 4. 四套柔和主题色与手机端扫码直连
-- **主软件 & 侧栏插件统一换肤**：内置 **薰衣草紫（默认）/ 雾霭蓝 / 鼠尾草绿 / 樱花粉** 四套低饱和度主题色，主软件顶部切换后 Antigravity MCP App 侧栏插件实时同步一致风格。
-- **桌面端常驻 + 手机协同**：Tauri 桌面应用自带托盘常驻、单实例唤醒与「在浏览器中打开」；点击右上角网络胶囊即可生成手机扫码直连二维码，支持 4 位陌生设备连接码与随时撤销已配对设备。
+<p>
+  <a href="https://github.com/Huanzhi0526/AgentSwarm/releases/latest"><strong>⬇️ 下载 Windows x64 最新安装包 (Releases)</strong></a> ·
+  <a href="./docs/USAGE_GUIDE.md"><strong>📖 完整新手教程与注意事项</strong></a> ·
+  <a href="https://github.com/Huanzhi0526/AgentSwarm/issues"><strong>🐛 问题反馈 (Issues)</strong></a> ·
+  <a href="./SECURITY.md"><strong>🛡️ 安全政策</strong></a>
+</p>
 
 ---
 
-## 快速安装与使用
+## 下载选择、系统要求与安装信任说明
 
-### 方式一：下载 Windows 安装包（推荐）
-无需配置 Node.js 或命令行环境：
-1. 前往本仓库 [Releases 页面](https://github.com/Huanzhi0526/AgentSwarm/releases) 下载最新 Windows 安装向导（`*.exe`）或 `*.msi` 安装包。
-2. 双击完成安装并启动 **AgentSwarm**，程序会自动在后台唤醒本地服务并打开主界面（关闭窗口默认最小化至系统托盘，右键托盘图标可随时打开浏览器视图或彻底退出）。
-3. 数据默认持久化在系统本地应用目录（Windows 下为 `%LOCALAPPDATA%\AgentSwarm\data`），升级安装包不会丢失既有看板与配置。
+### 1. 安装包选择
+| 资产类型 | 适用人群与说明 |
+| :--- | :--- |
+| **`*_x64-setup.exe`（普通用户首选）** | 简体中文安装向导（NSIS），默认安装到当前用户目录，无需管理员权限，支持托盘常驻与直接升级覆盖 |
+| **`*_x64_en-US.msi`** | 标准 Windows Installer 企业/系统部署包（安装向导语言为英文 `en-US`） |
+| **Source code (zip / tar.gz)** | 开发者源码包（需自行安装 Node.js 24+ 与 pnpm） |
 
-### 方式二：接入桌面 AI 客户端（Antigravity / CodeX / CodeBuddy / Claude Code）
-1. 在左侧栏或工作台点击 **「桌面端 MCP 接入」**。
-2. 在弹窗中点击对应客户端的 **「一键接入 MCP」**（自动备份原有配置，安全增量写入，支持随时还原卸载；CodeX 会自动配置超长工具超时以支撑零消耗长监听）。
-3. 在客户端中直接围绕项目目录对话，或调用 `cowork_setup_board` 创建看板，即可开启桌面主管与网页/手机多智能体实时协同。
+### 2. 运行环境与前提条件
+- **系统支持**：Windows 10 / Windows 11（64 位 `x64`），依赖系统自带 Microsoft Edge WebView2 运行时。
+- **开箱即用底座**：Windows 安装包已内置 **Node.js 24 运行时**与打包后的全栈服务，安装完双击即可启动并浏览内置离线导览，无需手动安装 Node 或配置环境。
+- **执行真实 AI 任务前提**：AgentSwarm 本身**不包含**云端模型额度；若要运行真实项目任务，本机需至少安装并登录一款受支持的 AI CLI 工具（如 `agy`、`codex`、`codebuddy`、`claude`）或已接入支持的桌面 AI 客户端。
+
+### 3. 安装包签名状态与 SHA-256 校验（必读）
+- **未签名提示**：目前开源社区版安装程序 **未购买商业 Authenticode 数字签名（`NotSigned`）**。首次下载运行 `.exe` 时若出现「Windows 已保护你的电脑（Microsoft Defender SmartScreen）」提示，请点击 **「更多信息」→「仍要运行」**。
+- **校验文件完整性**：下载完成后，请在 Release 页面核对资产旁的 **SHA-256 摘要**，也可在 PowerShell 中运行以下命令比对一致再安装：
+  ```powershell
+  Get-FileHash .\AgentSwarm_1.4.1_x64-setup.exe -Algorithm SHA256
+  ```
+
+---
+
+## 3 分钟快速上手：从安装到第一次成功交付
+
+### 第 0 步：启动程序并体验离线导览
+安装完成后启动桌面应用（关闭主窗口默认保留在右下角系统托盘，右键托盘图标可点击「在浏览器中打开」或「退出程序」）。首次启动新库会直接进入 **「快速上手：多智能体协同导览」**（离线演示，不调用真实 CLI，也不会修改你的个人项目目录）：
+
+![AgentSwarm 离线导览主界面](./docs/images/quickstart-tour.png)
+
+接下来，你可以根据习惯选择下面 **两条真实使用路线之一**（两者互不冲突，可随时结合）：
+
+### 路线 A：直接在看板里给本地 CLI 团队派工（无需打开外部桌面客户端）
+1. 在导览卡点击 **「创建我的第一个真实看板」**（或左上角 `+ 新建看板`）。
+2. **第 1 步选定项目目录**：点击 **「在「文档」新建练习文件夹」** 或浏览选中你的代码/文稿目录（软件会拦截磁盘根目录、系统目录和程序自身安装目录以策安全）。
+3. **第 2 步确认主管引擎可用**：模板卡片旁会直观显示 `已就绪` 或 `未安装`；也可展开团队配置自由增删成员、切换主管、调整引擎/模型与原生思考强度。
+4. **第 3 步发送首条需求并验收交付**：主管收到消息后拆解任务并按依赖逐波次派给队员，文件产出后可在群聊中点击 **「预览」** 或 **「对比改动」** 逐行对比修改前后差异：
+
+![AgentSwarm 改动前后对比与安全撤回弹窗](./docs/images/deliverable-diff.png)
+
+### 路线 B：让 Antigravity / CodeX / CodeBuddy / Claude Code 直接担任主管
+1. 安装完 **AgentSwarm** 后，点击左侧栏或工作台中的 **「桌面端 MCP 接入」**。
+2. 在支持客户端（**Antigravity / CodeX / CodeBuddy / Claude Code**）旁点击 **「一键接入」**（工具会自动先为原有配置文件创建 `.bak-cowork` 备份，且保留你的第三方配置与注释；随后点击弹窗右上角 **「一键自检」** 核对本地服务与脚本）。
+3. **回到你的桌面 AI 客户端刷新 MCP 或新开对话**：围绕你的项目目录发话并调用 `cowork_setup_board` / `cowork_dispatch_wave` 创建协同团队，即可一边在桌面软件与主管交互，一边在 AgentSwarm 看板中可视化查看成员状态、任务进度与改动快照。
+
+---
+
+## 能力说明与使用注意事项（诚实边界）
+
+### 1. 支持的桌面端 MCP 接入与 CLI 工具
+- **已完成真机与流程验证的主力桌面端**：**Antigravity**（支持专属右侧栏 `MCP App` 视图、`app.sendMessage()` 侧栏直通与可独立启停的 `PreInvocation` Hook）、**CodeX**（自动写入 `tool_timeout_sec = 3600` 支撑长待命监听）、**CodeBuddy**、**Claude Code**。
+- **20 款 CLI 智能体注册目录**：工作台参照 `iOfficeAI/AionUi` 收录 20 款 CLI（Antigravity、CodeX、CodeBuddy、Claude Code、Gemini CLI、Qwen Code、OpenCode、Cursor、Copilot CLI、Kimi CLI、Auggie、Goose、Droid、Qoder、Mistral Vibe、Kiro、Hermes、Snow、OpenClaw、Nanobot）。真实派工前请确保对应 CLI 在本机**已安装且已完成账号登录 / API 密钥配置**；若建板时所选主管尚未安装，首条消息会自动安全保留在输入框草稿中待切换后发送。
+- **「自动监听」与「闲置唤醒」说明**：
+  - 在「自动监听：开」下，支持长阻塞工具调用的宿主（如 CodeX、Claude Code 等）会在工具返回指引后调用 `cowork_wait_board(waitForNewActivity=true)` 挂起等待，期间不主动发请求空耗主管上下文（取决于宿主客户端自身的工具超时上限；顶部随时可点击「自动监听：关」或留言「结束监听」即时释放）。
+  - Antigravity 打开右侧看板分栏且开启自动转接时，网页/手机留言可自动送入左侧对话；关闭侧栏时如开启了 Hook，可在你下次在 Antigravity 发话前附加未读留言；若桌面端完全闲置不响应，点击看板上的 **「本轮改由后台 CLI 主管立即代答」** 即可即时接管。
+
+### 2. 安全、网络与多设备连接
+- **默认仅限本机访问**：AgentSwarm 启动默认只绑定 `127.0.0.1`，局域网其他设备无法探测或接入。
+- **手机扫码使用条件**：在电脑端右上角点击 **「仅本机」→ 开启「允许手机 / 其他设备访问」** 后才会绑定选定的局域网或异地组网 IP，手机需在同一路由器 Wi-Fi（且路由器未开启 AP 隔离）或登录同一 Tailscale/ZeroTier 组网，并通过扫码或输入 **4 位连接码** 配对（支持按单个设备移除或全部撤销）。
+- **严禁公网裸奔暴露**：请勿将 `25880` 端口映射到公网或暴露在不可信公共 Wi-Fi 下。
+
+### 3. 数据存储、多实例端口隔离与升级 / 卸载
+- **数据存储位置**：
+  - **Windows 安装版**：数据持久化在 `%LOCALAPPDATA%\AgentSwarm\data`（含数据库 `cowork-board.db`、文件快照 `snapshots/` 与日志 `desktop-server.*.log`）。
+  - **源码开发运行**：数据默认保存在仓库根目录下的 `./data/`。
+  - **多开与端口隔离**：若系统 25880 端口已被另一实例（例如源码开发环境）或其它软件占用，桌面端启动时会自动校验数据目录身份，并在独立端口（25881+）开启自身隔离实例，提供清晰选择避免误连旧数据。
+- **原位升级、备份与卸载**：
+  - 安装新版安装包原位覆盖或通过系统卸载程序移除软件本身，**不会删除 `%LOCALAPPDATA%\AgentSwarm\data` 中的历史数据**。
+  - 重大版本升级或迁移前，可直接复制备份 `%LOCALAPPDATA%\AgentSwarm\data` 文件夹以保留全部看板与备份点。
+
+👉 更多图文步骤、三向冲突撤回详解与常见排查，请阅读 **[完整用户手册：docs/USAGE_GUIDE.md](./docs/USAGE_GUIDE.md)**。
 
 ---
 
 ## 源码运行与二次开发
 
-环境要求：**Node.js 24+**、**pnpm 11+**；若需在本地打包 Windows 安装程序，还需 **Rust Stable** 与 Windows MSVC 构建工具（`.github/workflows/release.yml` 已配置自动云端构建 Release）。
+环境要求：**Node.js 24+**、**pnpm 11+**；打包 Windows 安装包另需 **Rust Stable** 与 Windows MSVC 构建工具（`.github/workflows/release.yml` 已配置自动构建、安装烟雾测试与 Release 发布）。
 
 ```bash
 # 1. 安装依赖
 pnpm install
 
-# 2. 开发模式（前后端热更新：Web http://127.0.0.1:5173 + Server http://127.0.0.1:25880）
+# 2. 开发模式（Web http://127.0.0.1:5173 + Server http://127.0.0.1:25880）
 pnpm dev
 
-# 3. 类型检查与全量构建（输出 dist/、dist-server/ 与 dist-mcp/）
+# 3. 类型检查与全量构建（输出 dist/、dist-server/、dist-mcp/）
 pnpm build
 
-# 4. 运行 10 项全隔离 MCP 与工作流回归审计（不触碰正式 data/）
+# 4. 运行 11 项全隔离自动化审计（不触碰正式 data/）
 pnpm exec tsx scripts/mcp_bridge_audit.mjs
 
-# 5. 整理自包含运行时并打包 Tauri 桌面安装程序
+# 5. 整理自包含运行时并打包 Tauri v2 安装程序
 pnpm tauri:prepare
 pnpm tauri build
 ```
 
-Windows 仓库源码目录下也可直接双击根目录 `启动协同看板.cmd` / `停止协同看板.cmd` 无黑框启停本地服务。更多详细架构与版本演进记录请参阅 [PLAN.md](./PLAN.md)、[AGENTS.md](./AGENTS.md) 与 [HANDOFF.md](./HANDOFF.md)。
+更多工程架构与交接信息请参阅 [AGENTS.md](./AGENTS.md)、[PLAN.md](./PLAN.md) 与 [HANDOFF.md](./HANDOFF.md)。
 
 ---
 
-## 开源参考与许可证
+## 开源致谢与许可证
 
-本项目参考并致谢以下开源项目的优秀实践：`iOfficeAI/AionUi`、`claudioed/agent-blackboard`、`JialaoLiu/dsh-baton`、`jazzenchen/agent-hud-open`、`ccusage` / `agy-switch`、`@modelcontextprotocol/sdk`、`@modelcontextprotocol/ext-apps`、`Tauri` 等。
+本项目架构与功能演进参考了 `iOfficeAI/AionUi`、`claudioed/agent-blackboard`、`JialaoLiu/dsh-baton`、`jazzenchen/agent-hud-open`、`ccusage`、`@modelcontextprotocol/sdk`、`@modelcontextprotocol/ext-apps` 与 `Tauri` 等优秀开源项目。
 
-本项目基于 [MIT License](./LICENSE) 开源。
+基于 [MIT License](./LICENSE) 开源发布。欢迎在 [GitHub Issues](https://github.com/Huanzhi0526/AgentSwarm/issues) 提出建议与问题，或通过 [SECURITY.md](./SECURITY.md) 私密报告安全问题。

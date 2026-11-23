@@ -15,5 +15,6 @@ src-tauri/app-icon-source.png
 .DS_Store
 .env
 *.log
+*审阅.md
 普通用户全流程体验与修改建议.md
 v1.3 MCP 与 Hook 体验复测及修改建议.md

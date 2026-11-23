@@ -58,7 +58,7 @@ export async function ensureBoardServerRunning(): Promise<void> {
             PORT: String(port),
             AGENT_COWORK_DATA_DIR: dataDir,
           },
-          detached: true,
+          detached: process.platform !== 'win32',
           windowsHide: true,
           stdio: ['ignore', outFd, errFd],
         });
@@ -135,7 +135,7 @@ async function callBoardApi<T>(
 const server = new McpServer(
   {
     name: 'agent-swarm-board',
-    version: '1.4.0',
+    version: '1.4.1',
   },
   {
     instructions: [

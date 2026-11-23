@@ -48,6 +48,7 @@ export const FolderPickerModal: React.FC<FolderPickerModalProps> = ({
   const [directories, setDirectories] = useState<DirectoryEntryItem[]>([]);
   const [totalDirectories, setTotalDirectories] = useState(0);
   const [truncated, setTruncated] = useState(false);
+  const [unsafeReason, setUnsafeReason] = useState<string | null>(null);
   const [canPickNativeDialog, setCanPickNativeDialog] = useState(false);
   const [loading, setLoading] = useState(false);
   const [pickingNative, setPickingNative] = useState(false);
@@ -96,6 +97,7 @@ export const FolderPickerModal: React.FC<FolderPickerModalProps> = ({
             : (data.directories || []).length
         );
         setTruncated(Boolean(data.truncated));
+        setUnsafeReason(data.unsafeReason || null);
         setCanPickNativeDialog(Boolean(data.canPickNativeDialog));
       } finally {
         if (reqId === reqIdRef.current && !options?.quietLoading) {
@@ -356,6 +358,12 @@ export const FolderPickerModal: React.FC<FolderPickerModalProps> = ({
           <div className="px-6 py-2 bg-[#FDF4F3] text-[12.5px] text-[#A65850]">{errorMsg}</div>
         )}
 
+        {unsafeReason && (
+          <div className="px-5 sm:px-6 py-2 bg-[#FCF7EF] border-b border-[#EFE2CE] text-[12px] text-[#8E5F24]">
+            {unsafeReason}
+          </div>
+        )}
+
         {truncated && (
           <div className="px-5 sm:px-6 py-1.5 bg-[var(--ac-tint)] border-b border-[var(--ac-border-soft)] text-[12px] text-[var(--ac-hover)]">
             共 {totalDirectories} 个子文件夹，当前显示前 {directories.length} 项，可输入名称快速筛选
@@ -411,11 +419,13 @@ export const FolderPickerModal: React.FC<FolderPickerModalProps> = ({
             </button>
             <button
               type="button"
+              disabled={Boolean(unsafeReason)}
               onClick={() => {
+                if (unsafeReason) return;
                 onSelect(currentPath);
                 onClose();
               }}
-              className="inline-flex h-9.5 items-center gap-1.5 rounded-xl bg-[var(--ac-primary)] px-5 text-[13.5px] font-semibold text-white hover:bg-[var(--ac-hover)] transition cursor-pointer"
+              className="inline-flex h-9.5 items-center gap-1.5 rounded-xl bg-[var(--ac-primary)] px-5 text-[13.5px] font-semibold text-white hover:bg-[var(--ac-hover)] disabled:opacity-45 disabled:cursor-not-allowed transition cursor-pointer"
             >
               <Check className="h-4 w-4" /> 选定此文件夹
             </button>

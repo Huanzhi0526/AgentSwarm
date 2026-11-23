@@ -34,7 +34,7 @@ import {
   updatePostMeta,
   upsertTask,
 } from '../db.js';
-import { runLiveCliTurn } from '../engines/cliRunner.js';
+import { classifyCliFailure, runLiveCliTurn } from '../engines/cliRunner.js';
 import {
   captureWorkspaceBaseline,
   listBoardSnapshots,
@@ -911,7 +911,14 @@ export class SwarmOrchestrator {
         this.enqueueWakeup(boardId, leader.slotId, `${slot.displayName} 已完成当前处理并向你汇报。`, slot.slotId);
       }
     } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
+      const rawErrMsg = err instanceof Error ? err.message : String(err);
+      const classified = classifyCliFailure(slot.displayName, rawErrMsg);
+      const errMsg = classified.summary;
+
+      const latestHumanPost = getBoardPosts(boardId)
+        .filter((p) => p.authorType === 'human')
+        .slice(-1)[0];
+      const sourceHumanText = latestHumanPost?.content || '';
 
       let failedSnapshot: WorkspaceSnapshot | null = null;
       try {
@@ -932,7 +939,12 @@ export class SwarmOrchestrator {
 
       const blockedSlot = updateAgentSlot(boardId, slotId, {
         state: 'blocked',
-        currentActivity: '异常中断',
+        currentActivity:
+          classified.kind === 'engine_uninstalled'
+            ? '引擎未安装'
+            : classified.kind === 'auth_required'
+              ? '需登录授权'
+              : '调用失败',
       })!;
       this.broadcast({ type: 'agent.updated', boardId, payload: blockedSlot });
 
@@ -941,6 +953,13 @@ export class SwarmOrchestrator {
         ? `\n\n> 执行失败但检测到本轮修改了 ${failedSnapshot.fileCount} 个文件，已自动生成保护备份，可直接对比或一键撤回。`
         : '';
 
+      const statusHeading =
+        classified.kind === 'engine_uninstalled'
+          ? '引擎未安装，无法执行：'
+          : classified.kind === 'auth_required'
+            ? '需要完成登录或 API 配置：'
+            : '调用执行失败：';
+
       const errPost = insertPost({
         boardId,
         authorType: 'agent',
@@ -948,11 +967,14 @@ export class SwarmOrchestrator {
         authorName: slot.displayName,
         authorEngine: slot.engine,
         kind: 'discussion',
-        content: `调用出错：${errMsg}${extraHint}`,
+        content: `${statusHeading}${errMsg}${extraHint}`,
         meta: {
           modelId: workingSlot.modelId,
           reasoningEffort: workingSlot.reasoningEffort,
           replyToSlotId: triggeredBySlotId,
+          isError: true,
+          errorKind: classified.kind,
+          sourceHumanText: sourceHumanText || undefined,
           snapshotId: failedSnapshot?.id,
           changeStatus: failedSnapshot ? 'pending' : undefined,
           fileChanges: failedSnapshot?.filesChanged,

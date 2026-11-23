@@ -28,6 +28,7 @@ import type {
   Board,
   BoardPost,
   BoardTask,
+  EngineId,
   EngineStatusCard,
   ModelOption,
   ReasoningEffort,
@@ -134,6 +135,14 @@ interface BoardStreamViewProps {
   ) => Promise<RevertClientOutcome | void>;
   onCreateCheckpoint: () => Promise<void>;
   onPreviewFile: (relPath: string) => void;
+  onOpenNewBoardModal?: () => void;
+  onOpenDesktopMcpModal?: () => void;
+  onSwitchAgentEngine?: (
+    slotId: string,
+    engine: EngineId,
+    modelId: string,
+    reasoningEffort: ReasoningEffort
+  ) => void;
 }
 
 const QUICK_INTENTS = [
@@ -167,6 +176,9 @@ export const BoardStreamView: React.FC<BoardStreamViewProps> = ({
   onRevertSnapshot,
   onCreateCheckpoint,
   onPreviewFile,
+  onOpenNewBoardModal,
+  onOpenDesktopMcpModal,
+  onSwitchAgentEngine,
 }) => {
   const [draftsByBoard, setDraftsByBoard] = useState<Record<string, BoardDraftRecord>>(
     loadDraftsFromSession
@@ -236,7 +248,9 @@ export const BoardStreamView: React.FC<BoardStreamViewProps> = ({
     setFeedbackText('');
     setTreeRelDir('');
 
-    const saved = draftsByBoard[board.id];
+    const freshMap = loadDraftsFromSession();
+    setDraftsByBoard(freshMap);
+    const saved = freshMap[board.id];
     if (saved) {
       setManualTarget(saved.manualTarget);
       setPendingClientMsgId(saved.pendingClientMsgId || newClientMsgId());
@@ -788,6 +802,71 @@ export const BoardStreamView: React.FC<BoardStreamViewProps> = ({
 
       {/* Group Chat Canvas */}
       <div className="flex-1 overflow-y-auto px-3.5 py-5 sm:px-6 sm:py-6 space-y-5 sm:space-y-6">
+        {board.executionMode === 'demo' && (
+          <div className="mx-auto w-full max-w-3xl rounded-2xl border border-[var(--ac-border)] bg-white p-4 sm:p-5 shadow-[0_2px_10px_rgba(20,20,35,0.03)] space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="rounded-md bg-[var(--ac-soft)] px-2 py-0.5 text-[11px] font-semibold text-[var(--ac-deep)]">
+                  内置离线导览
+                </span>
+                <span className="text-[14px] font-bold text-[#1F2024]">
+                  快速体验协同流程（不调用真实 CLI，不改动你的个人项目目录）
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[12px]">
+              <div className="rounded-xl bg-[#F8F8FB] border border-[#EFEFF4] px-3 py-2">
+                <div className="font-semibold text-[var(--ac-text)]">1. 选定项目目录</div>
+                <div className="text-[#7A7D89] mt-0.5">指向你想让 AI 协作的文件夹</div>
+              </div>
+              <div className="rounded-xl bg-[#F8F8FB] border border-[#EFEFF4] px-3 py-2">
+                <div className="font-semibold text-[var(--ac-text)]">2. 检查引擎就绪</div>
+                <div className="text-[#7A7D89] mt-0.5">在右栏或工作台确认可用工具</div>
+              </div>
+              <div className="rounded-xl bg-[#F8F8FB] border border-[#EFEFF4] px-3 py-2">
+                <div className="font-semibold text-[var(--ac-text)]">3. 发送首条需求</div>
+                <div className="text-[#7A7D89] mt-0.5">由主管拆解任务并调度成员</div>
+              </div>
+              <div className="rounded-xl bg-[#F8F8FB] border border-[#EFEFF4] px-3 py-2">
+                <div className="font-semibold text-[var(--ac-text)]">4. 预览与对比撤回</div>
+                <div className="text-[#7A7D89] mt-0.5">下方成果卡可直接体验对比与撤回</div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 pt-0.5">
+              <button
+                type="button"
+                onClick={() => {
+                  updateCurrentDraft({
+                    text: '请演示如何整理接口与检查清单，并展示文件改动预览。',
+                  });
+                }}
+                className="inline-flex h-8.5 items-center gap-1.5 rounded-xl border border-[var(--ac-border)] bg-[var(--ac-tint)] px-3.5 text-[12.5px] font-semibold text-[var(--ac-text)] hover:bg-[var(--ac-soft)] cursor-pointer"
+              >
+                <Sparkles className="h-3.5 w-3.5" /> 试用导览对话
+              </button>
+              {onOpenNewBoardModal && (
+                <button
+                  type="button"
+                  onClick={onOpenNewBoardModal}
+                  className="inline-flex h-8.5 items-center gap-1.5 rounded-xl bg-[var(--ac-primary)] px-3.5 text-[12.5px] font-semibold text-white hover:bg-[var(--ac-hover)] cursor-pointer"
+                >
+                  创建我的第一个真实看板
+                </button>
+              )}
+              {onOpenDesktopMcpModal && (
+                <button
+                  type="button"
+                  onClick={onOpenDesktopMcpModal}
+                  className="inline-flex h-8.5 items-center gap-1.5 rounded-xl border border-[#E4E4EC] bg-white px-3.5 text-[12.5px] font-medium text-[#4B4D57] hover:bg-[#F7F7FA] cursor-pointer"
+                >
+                  接入桌面 AI 客户端 (MCP)
+                </button>
+              )}
+            </div>
+          </div>
+        )}
         {posts.map((post) => {
           const isHuman = post.authorType === 'human';
           const isSystem = post.authorType === 'system';
@@ -1035,6 +1114,21 @@ export const BoardStreamView: React.FC<BoardStreamViewProps> = ({
                     }
                   />
 
+                  {post.meta.isError && post.meta.sourceHumanText && (
+                    <div className="mt-2.5 flex flex-wrap items-center gap-2 pt-2 border-t border-[#F3E6E4]">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          updateCurrentDraft({ text: post.meta.sourceHumanText! });
+                          showToast('已把原消息放回下方输入框，可直接切换引擎或编辑后重发');
+                        }}
+                        className="inline-flex h-7.5 items-center gap-1.5 rounded-lg border border-[#E4D5D3] bg-[#FDF8F7] px-3 text-[12px] font-medium text-[#943F37] hover:bg-[#F9ECEA] cursor-pointer"
+                      >
+                        <RotateCcw className="h-3 w-3" /> 重新编辑发送原消息
+                      </button>
+                    </div>
+                  )}
+
                   {post.meta.staffingTable && post.meta.staffingTable.length > 0 && (
                     <div className="mt-3 rounded-2xl border border-[#EAE8F3] bg-[#F8F7FC] p-3">
                       <div className="mb-2 text-[12px] font-semibold text-[var(--ac-text)]">团队分工安排</div>
@@ -1139,76 +1233,100 @@ export const BoardStreamView: React.FC<BoardStreamViewProps> = ({
                         </div>
                       )}
 
-                      {snapshotId && (
-                        <div
-                          className={`flex flex-wrap items-center justify-between gap-2.5 ${
-                            filesList.length > 0 ? 'pt-2.5 border-t border-[#ECECF3]' : ''
-                          }`}
-                        >
-                          <div className="flex items-center gap-1.5 text-[12px]">
-                            {changeStatus === 'adopted' ? (
-                              <>
-                                <span className="h-2 w-2 rounded-full bg-[#5BA97B] flex-shrink-0" />
-                                <span className="font-semibold text-[#458964]">已采纳保留此改动</span>
-                              </>
-                            ) : changeStatus === 'reverted' ? (
-                              <>
-                                <span className="h-2 w-2 rounded-full bg-[#C97A72] flex-shrink-0" />
-                                <span className="font-semibold text-[#A65850]">已撤回并恢复原文件</span>
-                              </>
-                            ) : (
-                              <>
-                                <span className="h-2 w-2 rounded-full bg-[var(--ac-bar)] flex-shrink-0" />
-                                <span className="text-[#6E717C]">原文件已自动备份，可随时对比或撤回</span>
-                              </>
-                            )}
-                          </div>
+                      {snapshotId && (() => {
+                        const linkedSnap = snapshots.find((s) => s.id === snapshotId);
+                        const outcome = linkedSnap?.lastRevertOutcome;
+                        const keptNewerOnly =
+                          changeStatus !== 'reverted' &&
+                          changeStatus !== 'adopted' &&
+                          Boolean(outcome && outcome.skippedFiles.length > 0 && outcome.restoredFiles.length === 0);
 
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => onOpenSnapshotDiff(snapshotId)}
-                              className="inline-flex h-7.5 items-center gap-1 rounded-lg border border-[#E4E4EC] bg-white px-2.5 text-[12px] font-medium text-[#3C3E47] hover:bg-[var(--ac-soft)] cursor-pointer"
-                            >
-                              <Eye className="h-3.5 w-3.5 text-[var(--ac-primary)]" /> 对比改动
-                            </button>
+                        return (
+                          <div
+                            className={`flex flex-wrap items-center justify-between gap-2.5 ${
+                              filesList.length > 0 ? 'pt-2.5 border-t border-[#ECECF3]' : ''
+                            }`}
+                          >
+                            <div className="flex items-center gap-1.5 text-[12px]">
+                              {changeStatus === 'adopted' ? (
+                                <>
+                                  <span className="h-2 w-2 rounded-full bg-[#5BA97B] flex-shrink-0" />
+                                  <span className="font-semibold text-[#458964]">已采纳保留此改动</span>
+                                </>
+                              ) : changeStatus === 'reverted' ? (
+                                <>
+                                  <span className="h-2 w-2 rounded-full bg-[#C97A72] flex-shrink-0" />
+                                  <span className="font-semibold text-[#A65850]">
+                                    {outcome && outcome.skippedFiles.length > 0
+                                      ? `已还原 ${outcome.restoredFiles.length} 个文件 · 保留 ${outcome.skippedFiles.length} 个较新修改`
+                                      : '已撤回并恢复原文件'}
+                                  </span>
+                                </>
+                              ) : keptNewerOnly ? (
+                                <>
+                                  <span className="h-2 w-2 rounded-full bg-[#5BA97B] flex-shrink-0" />
+                                  <span className="font-semibold text-[#3B7A57]">
+                                    已保留较新修改（撤回 0 个，跳过 {outcome?.skippedFiles.length} 个文件）
+                                  </span>
+                                </>
+                              ) : (
+                                <>
+                                  <span className="h-2 w-2 rounded-full bg-[var(--ac-bar)] flex-shrink-0" />
+                                  <span className="text-[#6E717C]">原文件已自动备份，可随时对比或撤回</span>
+                                </>
+                              )}
+                            </div>
 
-                            {changeStatus !== 'reverted' && (
+                            <div className="flex flex-wrap items-center gap-1.5">
                               <button
                                 type="button"
-                                onClick={async () => {
-                                  const outcome = await onRevertSnapshot(snapshotId, 'strict');
-                                  if (outcome?.hasConflicts) {
-                                    // DiffCompareModal is automatically opened in conflict resolution mode by App
-                                    return;
-                                  }
-                                  if (outcome && !outcome.ok) {
-                                    showToast(outcome.error || '撤回失败，请查看详情');
-                                    return;
-                                  }
-                                  showToast('已撤回该次改动并恢复原文件');
-                                }}
-                                className="inline-flex h-7.5 items-center gap-1 rounded-lg border border-[#E5D7D5] bg-[#FDF8F7] px-2.5 text-[12px] font-medium text-[#A65850] hover:bg-[#F9ECEA] cursor-pointer"
+                                onClick={() => onOpenSnapshotDiff(snapshotId)}
+                                className="inline-flex h-7.5 items-center gap-1 rounded-lg border border-[#E4E4EC] bg-white px-2.5 text-[12px] font-medium text-[#3C3E47] hover:bg-[var(--ac-soft)] cursor-pointer"
                               >
-                                <RotateCcw className="h-3.5 w-3.5" /> 一键撤回
+                                <Eye className="h-3.5 w-3.5 text-[var(--ac-primary)]" />{' '}
+                                {keptNewerOnly ? '查看处理结果' : '对比改动'}
                               </button>
-                            )}
 
-                            {changeStatus !== 'adopted' && (
-                              <button
-                                type="button"
-                                onClick={async () => {
-                                  await onAdoptSnapshot(snapshotId);
-                                  showToast('已采纳保留该次改动');
-                                }}
-                                className="inline-flex h-7.5 items-center gap-1 rounded-lg bg-[var(--ac-primary)] px-3 text-[12px] font-semibold text-white hover:bg-[var(--ac-hover)] cursor-pointer"
-                              >
-                                <Check className="h-3.5 w-3.5" /> 采纳保留
-                              </button>
-                            )}
+                              {changeStatus !== 'reverted' && (
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    const outcomeRes = await onRevertSnapshot(snapshotId, 'strict');
+                                    if (outcomeRes?.hasConflicts) {
+                                      return;
+                                    }
+                                    if (outcomeRes && !outcomeRes.ok) {
+                                      showToast(outcomeRes.error || '撤回失败，请查看详情');
+                                      return;
+                                    }
+                                    showToast(
+                                      outcomeRes?.restoredCount
+                                        ? `已撤回 ${outcomeRes.restoredCount} 个文件并恢复原内容`
+                                        : '已完成撤回处理'
+                                    );
+                                  }}
+                                  className="inline-flex h-7.5 items-center gap-1 rounded-lg border border-[#E5D7D5] bg-[#FDF8F7] px-2.5 text-[12px] font-medium text-[#A65850] hover:bg-[#F9ECEA] cursor-pointer"
+                                >
+                                  <RotateCcw className="h-3.5 w-3.5" /> 一键撤回
+                                </button>
+                              )}
+
+                              {changeStatus !== 'adopted' && (
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    await onAdoptSnapshot(snapshotId);
+                                    showToast('已采纳保留该次改动');
+                                  }}
+                                  className="inline-flex h-7.5 items-center gap-1 rounded-lg bg-[var(--ac-primary)] px-3 text-[12px] font-semibold text-white hover:bg-[var(--ac-hover)] cursor-pointer"
+                                >
+                                  <Check className="h-3.5 w-3.5" /> 采纳保留
+                                </button>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      )}
+                        );
+                      })()}
                     </div>
                   )}
 
@@ -1453,39 +1571,60 @@ export const BoardStreamView: React.FC<BoardStreamViewProps> = ({
             </div>
           )}
 
-          {/* Send Failure / Uninstalled Engine Alert with Retry (P1-06 / P2-11) */}
-          {(sendError || isTargetEngineUninstalled) && (
-            <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#EED7D4] bg-[#FDF5F4] px-3 py-2 text-[12.5px] text-[#943F37]">
-              <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                <AlertTriangle className="h-4 w-4 flex-shrink-0 text-[#B65B50]" />
-                <span>
-                  {sendError?.message ||
-                    `${targetAgent?.displayName} 当前配置的「${targetEngineCard?.name}」尚未在本机安装，请先切换为可用成员或更换引擎。`}
-                </span>
+          {/* Send Failure / Uninstalled Engine Alert with Retry & Quick Engine Switch */}
+          {(sendError || isTargetEngineUninstalled) && (() => {
+            const firstInstalledEngine = availableEngines?.find((e) => e.installed);
+            return (
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#EED7D4] bg-[#FDF5F4] px-3 py-2 text-[12.5px] text-[#943F37]">
+                <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                  <AlertTriangle className="h-4 w-4 flex-shrink-0 text-[#B65B50]" />
+                  <span>
+                    {sendError?.message ||
+                      `${targetAgent?.displayName} 当前配置的「${targetEngineCard?.name}」尚未在本机安装，草稿已保留；请切换为可用引擎后再发送。`}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  {sendError?.canRetry && (
+                    <button
+                      type="button"
+                      disabled={sending}
+                      onClick={() => void handleSend()}
+                      className="inline-flex h-7 items-center gap-1 rounded-lg bg-[var(--ac-primary)] px-3 text-[12px] font-semibold text-white hover:bg-[var(--ac-hover)] cursor-pointer"
+                    >
+                      <RotateCcw className="h-3 w-3" /> 重试发送
+                    </button>
+                  )}
+                  {isTargetEngineUninstalled && targetAgent && firstInstalledEngine && onSwitchAgentEngine && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onSwitchAgentEngine(
+                          targetAgent.slotId,
+                          firstInstalledEngine.id,
+                          firstInstalledEngine.defaultModel,
+                          firstInstalledEngine.defaultEffort
+                        );
+                        setSendError(null);
+                        showToast(`已将 ${targetAgent.displayName} 切换为 ${firstInstalledEngine.name}`);
+                      }}
+                      className="inline-flex h-7 items-center rounded-lg bg-[var(--ac-primary)] px-2.5 text-[11.5px] font-semibold text-white hover:bg-[var(--ac-hover)] cursor-pointer"
+                    >
+                      切换至 {firstInstalledEngine.name}
+                    </button>
+                  )}
+                  {isTargetEngineUninstalled && (
+                    <button
+                      type="button"
+                      onClick={() => onOpenMobileRightSheet('roster')}
+                      className="xl:hidden rounded-lg border border-[#E4C9C5] bg-white px-2.5 py-1 text-[11.5px] font-medium text-[#7A352E] cursor-pointer"
+                    >
+                      调整成员
+                    </button>
+                  )}
+                </div>
               </div>
-              <div className="flex items-center gap-1.5 flex-shrink-0">
-                {sendError?.canRetry && (
-                  <button
-                    type="button"
-                    disabled={sending}
-                    onClick={() => void handleSend()}
-                    className="inline-flex h-7 items-center gap-1 rounded-lg bg-[var(--ac-primary)] px-3 text-[12px] font-semibold text-white hover:bg-[var(--ac-hover)] cursor-pointer"
-                  >
-                    <RotateCcw className="h-3 w-3" /> 重试发送
-                  </button>
-                )}
-                {isTargetEngineUninstalled && (
-                  <button
-                    type="button"
-                    onClick={() => onOpenMobileRightSheet('roster')}
-                    className="xl:hidden rounded-lg border border-[#E4C9C5] bg-white px-2.5 py-1 text-[11.5px] font-medium text-[#7A352E] cursor-pointer"
-                  >
-                    去切换引擎
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* Attached File Chips */}
           {attachedFiles.length > 0 && (
@@ -1535,6 +1674,7 @@ export const BoardStreamView: React.FC<BoardStreamViewProps> = ({
                 type="button"
                 onClick={openFilePicker}
                 title="引用项目文件"
+                aria-label="引用项目文件"
                 className="inline-flex h-8 items-center gap-1.5 rounded-xl px-2 sm:px-2.5 text-[12.5px] font-medium text-[#5E616D] hover:bg-[#F4F3F8] transition cursor-pointer whitespace-nowrap"
               >
                 <Paperclip className="h-4 w-4 sm:h-3.5 sm:w-3.5 text-[var(--ac-primary)]" />
@@ -1545,6 +1685,7 @@ export const BoardStreamView: React.FC<BoardStreamViewProps> = ({
                 type="button"
                 onClick={() => setQuickOpen((o) => !o)}
                 title="常用指令模板"
+                aria-label="常用指令模板"
                 className="inline-flex h-8 items-center gap-1.5 rounded-xl px-2 sm:px-2.5 text-[12.5px] font-medium text-[#5E616D] hover:bg-[#F4F3F8] transition cursor-pointer whitespace-nowrap"
               >
                 <Sparkles className="h-4 w-4 sm:h-3.5 sm:w-3.5 text-[var(--ac-primary)]" />
@@ -1605,16 +1746,19 @@ export const BoardStreamView: React.FC<BoardStreamViewProps> = ({
                 disabled={
                   (!inputText.trim() && attachedFiles.length === 0) ||
                   sending ||
-                  isSwitchingBoard
+                  isSwitchingBoard ||
+                  isTargetEngineUninstalled
                 }
-                className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-[var(--ac-primary)] px-4 text-[13.5px] font-semibold text-white hover:bg-[var(--ac-hover)] disabled:opacity-35 transition cursor-pointer"
+                className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-[var(--ac-primary)] px-4 text-[13.5px] font-semibold text-white hover:bg-[var(--ac-hover)] disabled:opacity-40 transition cursor-pointer"
               >
                 {sending ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 ) : (
                   <Send className="h-3.5 w-3.5" />
                 )}
-                <span>{sending ? '发送中' : '发送'}</span>
+                <span>
+                  {sending ? '发送中' : isTargetEngineUninstalled ? '需切换引擎' : '发送'}
+                </span>
               </button>
             </div>
           </div>

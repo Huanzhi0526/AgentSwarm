@@ -9,7 +9,7 @@ import {
   ChevronRight,
   ShieldCheck,
 } from 'lucide-react';
-import type { SnapshotConflictItem, SnapshotDiffDetail } from '../types';
+import type { SnapshotConflictItem, SnapshotDiffDetail, SnapshotRevertOutcome } from '../types';
 import { apiFetch } from '../utils/api';
 
 export interface RevertClientOutcome {
@@ -18,6 +18,9 @@ export interface RevertClientOutcome {
   conflicts?: SnapshotConflictItem[];
   restoredCount?: number;
   skippedConflicts?: number;
+  restoredFiles?: string[];
+  skippedFiles?: string[];
+  protectionSnapshotId?: string | null;
   error?: string;
 }
 
@@ -30,6 +33,7 @@ interface DiffCompareModalProps {
     snapshotId: string,
     mode?: 'strict' | 'skip_conflicts' | 'overwrite_all'
   ) => Promise<RevertClientOutcome | void>;
+  onSelectSnapshot?: (snapshotId: string) => void;
 }
 
 const PAGE_SIZE = 12;
@@ -46,16 +50,19 @@ export const DiffCompareModal: React.FC<DiffCompareModalProps> = ({
   onClose,
   onAdopt,
   onRevert,
+  onSelectSnapshot,
 }) => {
   const [detail, setDetail] = useState<SnapshotDiffDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [page, setPage] = useState(1);
   const [activeConflicts, setActiveConflicts] = useState<SnapshotConflictItem[] | null>(null);
+  const [localOutcome, setLocalOutcome] = useState<SnapshotRevertOutcome | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
     setActiveConflicts(pendingConflicts ?? null);
+    setLocalOutcome(null);
     setActionError(null);
     setPage(1);
     if (!snapshotId) {
@@ -67,8 +74,8 @@ export const DiffCompareModal: React.FC<DiffCompareModalProps> = ({
       .then((r) => (r.ok ? r.json() : null))
       .then((data: SnapshotDiffDetail | null) => {
         setDetail(data);
-        if (!pendingConflicts && data?.conflicts?.length) {
-          // Leave available so banner can warn before click if desired
+        if (data?.snapshot?.lastRevertOutcome) {
+          setLocalOutcome(data.snapshot.lastRevertOutcome);
         }
       })
       .finally(() => setLoading(false));
@@ -112,7 +119,20 @@ export const DiffCompareModal: React.FC<DiffCompareModalProps> = ({
         setActionError(result.error);
         return;
       }
-      onClose();
+      setActiveConflicts(null);
+      setLocalOutcome({
+        mode,
+        at: Date.now(),
+        restoredFiles: result?.restoredFiles ?? [],
+        skippedFiles: result?.skippedFiles ?? [],
+        protectionSnapshotId: result?.protectionSnapshotId ?? null,
+      });
+      const fresh = await apiFetch(`/api/snapshots/${snapshotId}/diff`)
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null);
+      if (fresh) {
+        setDetail(fresh as SnapshotDiffDetail);
+      }
     } finally {
       setBusy(false);
     }
@@ -215,6 +235,40 @@ export const DiffCompareModal: React.FC<DiffCompareModalProps> = ({
           </div>
         )}
 
+        {localOutcome && !activeConflicts && (
+          <div className="border-b border-[#CBE6D5] bg-[#EAF5EE] px-5 py-3 sm:px-6 flex flex-wrap items-center justify-between gap-2 text-[13px] text-[#2F6A4A]">
+            <div className="flex items-center gap-2 min-w-0">
+              <ShieldCheck className="h-4.5 w-4.5 flex-shrink-0 text-[#458964]" />
+              <span>
+                处理结果：已撤回还原 <strong>{localOutcome.restoredFiles.length}</strong> 个文件，保留较新修改{' '}
+                <strong>{localOutcome.skippedFiles.length}</strong> 个文件
+                {localOutcome.skippedFiles.length > 0 && localOutcome.restoredFiles.length === 0
+                  ? '（本次未覆盖任何文件）'
+                  : ''}
+                {localOutcome.protectionSnapshotId ? ' · 已同步生成覆盖前保护快照' : ''}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {localOutcome.protectionSnapshotId && onSelectSnapshot && (
+                <button
+                  type="button"
+                  onClick={() => onSelectSnapshot(localOutcome.protectionSnapshotId!)}
+                  className="rounded-lg border border-[#B5DAC3] bg-white px-3 py-1 text-[12px] font-semibold text-[#3B7A57] hover:bg-[#F4FBF6] cursor-pointer"
+                >
+                  查看保护快照
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-lg bg-[#458964] px-3 py-1 text-[12px] font-semibold text-white hover:bg-[#3A7555] cursor-pointer"
+              >
+                完成
+              </button>
+            </div>
+          </div>
+        )}
+
         {actionError && (
           <div className="border-b border-[#EED9D6] bg-[#FDF6F5] px-5 py-2.5 text-[13px] text-[#A65850]">
             {actionError}
@@ -222,7 +276,7 @@ export const DiffCompareModal: React.FC<DiffCompareModalProps> = ({
         )}
 
         {/* Non-blocking Diverged Hint Banner when viewing Diff before clicking Revert */}
-        {!activeConflicts && divergedCount > 0 && (
+        {!activeConflicts && !localOutcome && divergedCount > 0 && (
           <div className="border-b border-[#EFE3D2] bg-[#FCF8F2] px-5 py-2.5 sm:px-6 text-[12.5px] text-[#8A6334] flex items-center gap-2">
             <AlertTriangle className="h-4 w-4 flex-shrink-0 text-[#B3803D]" />
             <span>
@@ -255,6 +309,16 @@ export const DiffCompareModal: React.FC<DiffCompareModalProps> = ({
                         {item.currentDiskDiverged && (
                           <span className="rounded-md bg-[#FCF4E8] px-2 py-0.5 text-[11px] font-semibold text-[#9C6A29] flex-shrink-0">
                             后续已有新编辑
+                          </span>
+                        )}
+                        {localOutcome?.restoredFiles.includes(item.path) && (
+                          <span className="rounded-md bg-[#EAF5EE] px-2 py-0.5 text-[11px] font-semibold text-[#3B7A57] flex-shrink-0">
+                            本次已还原
+                          </span>
+                        )}
+                        {localOutcome?.skippedFiles.includes(item.path) && (
+                          <span className="rounded-md bg-[#F2F1F8] px-2 py-0.5 text-[11px] font-semibold text-[var(--ac-text)] flex-shrink-0">
+                            已保留较新修改
                           </span>
                         )}
                       </div>

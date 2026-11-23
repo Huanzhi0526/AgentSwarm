@@ -1,11 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
+import { spawn } from 'node:child_process';
 import type { QuotaWindowBar } from '../../src/types.js';
 import { db } from '../db.js';
-
-const execFileAsync = promisify(execFile);
 
 export function formatResetCountdown(resetEpochMs: number): string {
   const diffMs = resetEpochMs - Date.now();
@@ -49,6 +46,8 @@ function savePersistedAgyQuota(entry: { at: number; bars: QuotaWindowBar[] }): v
   }
 }
 
+const PASSIVE_AGY_QUOTA_TTL_MS = 6 * 3600_000;
+
 export async function fetchAntigravityRealQuota(
   agyBinaryPath: string | null,
   forceRefresh = false
@@ -57,22 +56,50 @@ export async function fetchAntigravityRealQuota(
   if (!agyQuotaCache) {
     agyQuotaCache = loadPersistedAgyQuota();
   }
-  if (!forceRefresh && agyQuotaCache) {
-    if (Date.now() - agyQuotaCache.at >= 600_000 && !agyInFlight) {
-      // Stale-while-revalidate: refresh asynchronously in background without blocking API/MCP callers
-      void fetchAntigravityRealQuota(agyBinaryPath, true).catch(() => {});
-    }
+  if (!forceRefresh && agyQuotaCache && Date.now() - agyQuotaCache.at < PASSIVE_AGY_QUOTA_TTL_MS) {
     return agyQuotaCache.bars;
   }
   if (agyInFlight) return agyInFlight;
 
   agyInFlight = (async () => {
     try {
-      const { stdout } = await execFileAsync(
-        agyBinaryPath,
-        ['-p', '/usage', '--output-format', 'json', '--print-timeout', '12s'],
-        { timeout: 14_000, windowsHide: true }
-      );
+      const stdout = await new Promise<string>((resolve, reject) => {
+        const child = spawn(
+          agyBinaryPath,
+          ['-p', '/usage', '--output-format', 'json', '--print-timeout', '12s'],
+          {
+            windowsHide: true,
+            detached: false,
+            stdio: ['ignore', 'pipe', 'ignore'],
+            env: {
+              ...process.env,
+              CI: '1',
+              NO_COLOR: '1',
+            },
+          }
+        );
+        let out = '';
+        const timer = setTimeout(() => {
+          try {
+            child.kill();
+          } catch {
+            // ignore kill error
+          }
+          reject(new Error('quota fetch timeout'));
+        }, 14_000);
+        child.stdout?.on('data', (chunk: Buffer) => {
+          out += chunk.toString('utf8');
+        });
+        child.on('error', (err) => {
+          clearTimeout(timer);
+          reject(err);
+        });
+        child.on('close', (code) => {
+          clearTimeout(timer);
+          if (code === 0 || out.trim().length > 0) resolve(out);
+          else reject(new Error(`quota exited with ${code}`));
+        });
+      });
 
       const line = stdout
         .split(/\r?\n/)

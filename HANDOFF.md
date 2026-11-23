@@ -1,31 +1,25 @@
 # AgentSwarm 维护交接
 
-## 当前状态（2026-11-23 · v1.4.0 Tauri v2 桌面化封装、MCP 自动挂起监听与 4 色主题已验收）
+## 当前状态（2026-11-23 · v1.4.1 安全默认值收紧、无终端闪窗、多实例隔离与文档完善已验收）
 
-- **版本号与运行状态**：`package.json` 与 `src-tauri/tauri.conf.json` 版本号均为 `1.4.0`（Node.js `24.16.0`、pnpm `11.7.0`），生产服务运行于 `http://127.0.0.1:25880`（`dist-server/index.js`）。既有本地 `data/` 中的用户正式看板与会话数据完整保留（并通过 `.gitignore` 严格隔离，不进入 Git 仓库）。
-- **v1.4.0 核心增量（2026-11-23）**：
-  1. **MCP 自动挂起监听（零轮询待命）与一键停止**：
-     - `server/mcp/index.ts`、`server/index.ts` 与 `server/orchestrator/swarmBus.ts` 为支持 `wait` 的响应注入 `autoStandby` 结构化指引、升级 `McpServer` (`agent-swarm-board` `1.4.0`) `instructions` 与 `cowork_standby_mode` Prompt，引导 Antigravity / CodeX / CodeBuddy / Claude Code 主管在常规收尾时自动挂起 `cowork_wait_board(waitForNewActivity=true)`。
-     - 数据库新增 `boards.host_auto_standby`（默认 `1`），看板与 MCP App 侧栏提供 **「自动监听：开/关」** 切换与用户自然语言停止指令（`结束监听 / 停止监听 / 关闭监听`），关闭瞬间释放所有 `standby` 等待句柄（实测耗时 `7ms`）。
-  2. **4 套主软件 + 插件同步主题色与发布级文案润色**：
-     - 新增 **薰衣草紫（`purple`，默认）/ 雾霭蓝（`blue`）/ 鼠尾草绿（`green`）/ 樱花粉（`pink`）** 四色主题，`GET/PUT /api/settings/theme` 持久化至 `app_settings` (`ui_theme`) 并经由 WebSocket `theme.updated` 与 MCP App `set_theme` 双向实时同步；全站图标与品牌 Logo 随 CSS 变量动态着色，移动端 `< 640px` 协同看板将主题切换置入左侧抽屉以免挤压顶栏额度胶囊与网络按钮。
-     - 全站统一定名为 **AgentSwarm**，消除早期测试性文案与原始备份后缀暴露，优化导览会话（`快速上手：多智能体协同导览` / `导览`）与跨端连接锁屏说明。
-  3. **Tauri v2 桌面端打包与自包含 Node 24 运行时**：
-     - `scripts/build-mcp.mjs` 将 Express / WebSocket / MCP SDK / Zod / QRCode 等全部运行时 npm 依赖内联构建入 `dist-server/index.js`、`dist-mcp/index.js` 与 `dist-mcp/preInvocationHook.js`（仅依赖 Node 24 内置 `node:sqlite` 与系统标准库，脱离 `node_modules/` 独立启动实测 `200 OK`）。
-     - `server/mcp/utils.ts` 升级 `resolveDefaultDataDir`：源码目录运行延续 `./data`；安装态只读目录运行自动将数据持久化至系统应用数据目录（Windows `%LOCALAPPDATA%\AgentSwarm\data`）。
-     - `src-tauri/` 完整实现 Tauri v2 宿主（`tray-icon`、单实例聚焦、关闭最小化到托盘、`CREATE_NO_WINDOW = 0x08000000` 后台拉起内置 `runtime/node.exe`、退出自动回收子进程），并配套 `.github/workflows/release.yml` 在 `windows-latest` 上自动运行 `pnpm build`、10 项审计及 `pnpm tauri build` 输出 NSIS `.exe` 与 WiX `.msi` GitHub Release。
+- **版本号与运行状态**：`package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json` 与 `/api/health` 版本号统一为 `1.4.1`（Node.js `24.16.0`、pnpm `11.7.0`），本机服务运行于 `http://127.0.0.1:25880`（`dist-server/index.js`）。既有本地 `data/` 中的用户正式看板与会话数据完整保留并受 `.gitignore` 保护。
+- **v1.4.1 重点修复与升级（对照 v1.4.0 审阅建议全面落地）**：
+  1. **Windows 终端黑框闪现根治**：修复 `server/mcp/index.ts`、`workspaceExplorer.ts`、`cliRunner.ts` 中的 `detached: true` 在 Windows 跳过 `CREATE_NO_WINDOW` 导致的闪窗，文件默认打开改用原生 GUI `rundll32.exe url.dll,FileProtocolHandler`，`quotaFetcher.ts` 取消 10 分钟被动后台拉起 `agy.exe`（改用 6 小时被动缓存 + 显式刷新触发），`scripts/start-server.ps1` 切换为无窗口且无管道 `EPIPE` 的独立句柄启动。
+  2. **P0 跨设备默认安全边界**：`server/index.ts` 默认严格监听 `127.0.0.1`；`server/auth/pairingGuard.ts` 新增 `remoteAccessEnabled`（新库默认 `false`）、`requirePinOnLan`（默认 `true`）、SHA-256 持久化设备清单及按单台/全量撤销令牌；远程打开时若未开启共享将明确引导在电脑端开启，手机二维码仅显示实际可用的局域网/组网地址。
+  3. **P1 桌面实例身份核验、端口隔离与启动可恢复性**：`/api/health` 输出 `service: 'agent-swarm'`、`version` 与本机 `dataDir`；`src-tauri/src/lib.rs` 探测 25880 为其他目录实例时自动隔离启动至 `25881+`（`server/mcp/utils.ts` 通过 `server.pid.json` 自动追踪动态端口），服务输出落盘 `desktop-server.*.log`，`boot-ui/index.html` 支持真实调用宿主 `restart_embedded_server` 重启服务、冲突选择以及查看/复制脱敏诊断。
+  4. **P1/P2 新手流程、引擎检查、安全选目录与撤回明确结果**：`NewBoardModal.tsx` 调整为「选目录 → 查主管状态 → 发需求」递进流程并校验安全目录；建板时若主管引擎未安装自动保留 `pendingInitialDraft` 至输入框草稿箱；`cliRunner.ts` / `swarmBus.ts` 区分未安装 / 需登录 / 执行失败三态并提供「重新编辑发送」；`snapshotManager.ts` + `DiffCompareModal.tsx` 持久化并直显 `lastRevertOutcome` 与保护快照跳转；导览页首屏增加「内置离线导览」四步引导卡；`DesktopMcpModal.tsx` 全面转为基于实际检测条件的四维状态表达。
+  5. **文档与社区完善**：新增 [docs/USAGE_GUIDE.md](./docs/USAGE_GUIDE.md)、实际界面与对比截图（`docs/images/`）、[SECURITY.md](./SECURITY.md)、[Issue 模板](./.github/ISSUE_TEMPLATE/bug_report.yml)，重写发布版 [README.md](./README.md) 与置顶化 [release.yml](./.github/workflows/release.yml)（增加安装包静默安装烟雾自测门禁）。
 
 ## 本轮实测与验收结果（2026-11-23）
 
-1. **全量构建与 Tauri 舞台整理（`pnpm tauri:prepare`）**：
-   - 最终代码后执行 `tsc --noEmit && vite build && node scripts/build-mcp.mjs` 与运行时打包全部退出码 `0`（`1899` 模块，`5.50s`，最大分包 `223.23 kB`，同步刷新 `dist/`、`dist-server/`、`dist-mcp/` 与 `src-tauri/bundle-stage/`）。
-2. **10 项全隔离自动化回归审计（`pnpm exec tsx scripts/mcp_bridge_audit.mjs`）**：
-   - Check 1–10 与正式 `data/` 零触碰守卫全部 `[PASS]`（新增 Check 10 覆盖 `autoStandby` 指令生成、切换关闭后 `7ms` 立即释放挂起等待以及 4 色主题在 `/api/workbench` 与 `/api/mcp/panel-state` 中的跨端同步）。
-3. **真实浏览器双视口实测（`1440×900` 与 `375×812`）**：
-   - 桌面端四色主题切换、看板自动监听开/关、Antigravity MCP App 面板交互与持久化复位均通过，零控制台/HTTP 错误。
-   - 针对初次移动端 `375×812` 看板顶栏溢出问题完成修复后二次复测：`协同看板` 顶栏配额胶囊与「异地组网」右侧边距 `365 <= 375` 零裁切；左侧滑出抽屉新增「界面主题」4 色行正常显示；`工作台` 宽度 `375px` 零溢出，`0` 失败请求、`0` 控制台报错。
+1. **全量构建（`pnpm tauri:prepare`）**：
+   - `tsc --noEmit && vite build && node scripts/build-mcp.mjs` 退出码 `0`（`1899` 模块，`6.38s`），成功整理 `src-tauri/bundle-stage/`。
+2. **11 项全隔离自动化回归审计（`pnpm exec tsx scripts/mcp_bridge_audit.mjs`）**：
+   - Check 1–11 与正式 `data/` 零触碰守卫全部 `[PASS]`（新增 Check 7 `skip_conflicts` / `overwrite_all` 明细校验，以及 Check 11 的默认仅本机、远程拒绝、令牌配对与单设备移除、`busy` 目录拦截与未装引擎首条消息草稿保留验证）。
+3. **真实浏览器双视口复测（`1440×900` & `375×812`）**：
+   - 在 `127.0.0.1:25880`（保留正式 6 会话）与全新隔离实例 `127.0.0.1:25889` 完成全量交互与截图验证：导览四步引导卡、分栏对比窗口、默认 `仅本机`、条件式 MCP 状态、`NewBoardModal` 默认定位用户 `Documents` 目录，以及 `375×812` 窄屏 `right = 365 <= 375` 与可访问 `aria-label` 全通过，`0` 失败请求、`0` 控制台报错。
 
 ## 接手入口
 
-- 开源发布与用户说明见 [README.md](./README.md)，完整产品规划见 [PLAN.md](./PLAN.md)，工程规范见 [AGENTS.md](./AGENTS.md)，v1.3 MCP 细化方案见 [PLAN_v1.3.md](./PLAN_v1.3.md)。
-- 常用命令：`pnpm dev`（开发联调）、`pnpm build`（全量构建）、`pnpm exec tsx scripts/mcp_bridge_audit.mjs`（10 项全隔离审计）、`pnpm tauri:prepare`（整理桌面打包舞台）、`pnpm tauri build`（构建桌面安装程序）。
+- 用户说明书见 [docs/USAGE_GUIDE.md](./docs/USAGE_GUIDE.md)，开源首页见 [README.md](./README.md)，安全政策见 [SECURITY.md](./SECURITY.md)，工程架构见 [AGENTS.md](./AGENTS.md)，历史演进见 [PLAN.md](./PLAN.md)。
+- 常用命令：`pnpm dev`（开发联调）、`pnpm build`（全量构建）、`pnpm exec tsx scripts/mcp_bridge_audit.mjs`（11 项全隔离审计）、`pnpm tauri:prepare`（整理桌面打包舞台）、`pnpm tauri build`（构建桌面安装程序）。

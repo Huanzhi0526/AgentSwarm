@@ -41,9 +41,48 @@ export function resolveDefaultDataDir(repoRoot: string): string {
   return path.join(xdgData, 'AgentSwarm', 'data');
 }
 
+function isPidAlive(pid: number): boolean {
+  if (!Number.isFinite(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err: unknown) {
+    const code = (err as { code?: string })?.code;
+    return code === 'EPERM';
+  }
+}
+
 export function getBoardApiPort(): number {
-  const n = Number(process.env.AGENT_COWORK_PORT || process.env.PORT || 25880);
-  return Number.isFinite(n) && n > 0 ? n : 25880;
+  const explicit = process.env.AGENT_COWORK_PORT || process.env.PORT;
+  if (explicit) {
+    const n = Number(explicit);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+
+  // Auto-discover dynamically reassigned port recorded by active desktop/standalone server
+  try {
+    const repoRoot = resolveMcpRepoRoot();
+    const pidFile = path.join(resolveDefaultDataDir(repoRoot), 'server.pid.json');
+    if (fs.existsSync(pidFile)) {
+      const parsed = JSON.parse(fs.readFileSync(pidFile, 'utf8')) as {
+        pid?: number;
+        port?: number;
+      };
+      if (
+        parsed.pid &&
+        parsed.port &&
+        Number.isFinite(parsed.port) &&
+        parsed.port > 0 &&
+        isPidAlive(parsed.pid)
+      ) {
+        return parsed.port;
+      }
+    }
+  } catch {
+    // fallback to default port
+  }
+
+  return 25880;
 }
 
 export function getBoardApiBaseUrl(): string {

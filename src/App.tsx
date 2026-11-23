@@ -52,6 +52,13 @@ const UI_THEME_OPTIONS: Array<{ id: AppThemeId; label: string; dot: string }> = 
 export const App: React.FC = () => {
   const [authChecking, setAuthChecking] = useState(true);
   const [locked, setLocked] = useState(false);
+  const [remoteDisabledLock, setRemoteDisabledLock] = useState(false);
+  const [hostInfo, setHostInfo] = useState<{
+    version?: string;
+    instanceMode?: 'desktop' | 'standalone';
+    dataDir?: string;
+    port?: number;
+  } | null>(null);
 
   const [uiTheme, setUiTheme] = useState<AppThemeId>(() => {
     try {
@@ -151,7 +158,16 @@ export const App: React.FC = () => {
         if (res.ok) {
           const st = await res.json();
           setLocked(!st.authorized);
+          setRemoteDisabledLock(Boolean(!st.isLocalhost && st.remoteAccessEnabled === false));
           setIsLocalhost(Boolean(st.isLocalhost));
+          if (st.isLocalhost) {
+            fetch('/api/health', { cache: 'no-store' })
+              .then((hr) => (hr.ok ? hr.json() : null))
+              .then((hd) => {
+                if (hd) setHostInfo(hd);
+              })
+              .catch(() => {});
+          }
         }
       } finally {
         setAuthChecking(false);
@@ -492,8 +508,10 @@ export const App: React.FC = () => {
   if (locked) {
     return (
       <PairingLockScreen
+        remoteDisabled={remoteDisabledLock}
         onUnlocked={() => {
           setLocked(false);
+          setRemoteDisabledLock(false);
           void fetchWorkbench();
           void fetchBoards();
         }}
@@ -517,13 +535,34 @@ export const App: React.FC = () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    if (res.ok) {
-      const created = (await res.json()) as Board;
-      await fetchBoards();
-      setActiveBoardId(created.id);
-      setActiveTab('board');
-      setLeftDrawerOpen(false);
+    if (!res.ok) {
+      const err = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(err.error || '新建看板失败');
     }
+    const created = (await res.json()) as Board & {
+      pendingInitialDraft?: string;
+      pendingReason?: string;
+    };
+    if (created.pendingInitialDraft) {
+      try {
+        const raw = sessionStorage.getItem('cowork_board_drafts_v1');
+        const map = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+        map[created.id] = {
+          text: created.pendingInitialDraft,
+          attachedFiles: [],
+          targetSlot: 'lead',
+          manualTarget: false,
+          pendingClientMsgId: `draft_${Date.now()}`,
+        };
+        sessionStorage.setItem('cowork_board_drafts_v1', JSON.stringify(map));
+      } catch {
+        // ignore storage write failures
+      }
+    }
+    await fetchBoards();
+    setActiveBoardId(created.id);
+    setActiveTab('board');
+    setLeftDrawerOpen(false);
   };
 
   const handleDeleteBoard = (e: React.MouseEvent, board: Board) => {
@@ -816,21 +855,37 @@ export const App: React.FC = () => {
     const data = (await res.json().catch(() => ({}))) as {
       restoredCount?: number;
       skippedConflicts?: number;
+      restoredFiles?: string[];
+      skippedFiles?: string[];
+      protectionSnapshot?: { id?: string } | null;
     };
     setDiffPendingConflicts(null);
     return {
       ok: true,
       restoredCount: data.restoredCount,
       skippedConflicts: data.skippedConflicts,
+      restoredFiles: data.restoredFiles,
+      skippedFiles: data.skippedFiles,
+      protectionSnapshotId: data.protectionSnapshot?.id || null,
     };
   };
 
   const eps = overview?.endpoints ?? [];
-  const networkBadgeLabel = eps.some((e) => e.kind === 'lan')
-    ? '局域网'
-    : eps.some((e) => e.kind === 'tailscale')
-      ? '异地组网'
-      : '本机';
+  const remoteShared = Boolean(overview?.remoteAccessEnabled);
+  const networkBadgeShort = !remoteShared
+    ? '仅本机'
+    : eps.some((e) => e.kind === 'lan')
+      ? '局域网'
+      : eps.some((e) => e.kind === 'tailscale')
+        ? '组网'
+        : '远程';
+  const networkBadgeFull = !remoteShared
+    ? '仅本机'
+    : eps.some((e) => e.kind === 'lan')
+      ? '局域网已开放'
+      : eps.some((e) => e.kind === 'tailscale')
+        ? '组网已开放'
+        : '远程已开启';
 
   const SidebarContent = (
     <div className="flex h-full flex-col bg-white border-r border-[#EAEAEF]">
@@ -853,7 +908,9 @@ export const App: React.FC = () => {
           </div>
 
           <button
+            type="button"
             onClick={() => setLeftDrawerOpen(false)}
+            aria-label="关闭会话与导航菜单"
             className="lg:hidden rounded-full p-1.5 text-[#8A8D98] hover:bg-[#F3F2F7]"
           >
             <X className="h-5 w-5" />
@@ -1040,6 +1097,26 @@ export const App: React.FC = () => {
           />
         </div>
       )}
+
+      {isLocalhost && hostInfo && (
+        <div
+          title={hostInfo.dataDir ? `当前数据目录：${hostInfo.dataDir}` : undefined}
+          className="border-t border-[#F1F1F5] bg-[#FAFAFC] px-4 py-2 text-[11px] text-[#8A8D98] flex-shrink-0 space-y-0.5"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <span className="truncate font-medium text-[#6E717C]">
+              v{hostInfo.version || '1.4.1'} ·{' '}
+              {hostInfo.instanceMode === 'desktop' ? '桌面版独立数据' : '本地服务数据'}
+            </span>
+            {hostInfo.port && <span className="font-mono flex-shrink-0">:{hostInfo.port}</span>}
+          </div>
+          {hostInfo.instanceMode === 'desktop' ? (
+            <div className="truncate">关闭窗口将留在系统托盘，右键托盘可彻底退出</div>
+          ) : (
+            hostInfo.dataDir && <div className="truncate font-mono">{hostInfo.dataDir}</div>
+          )}
+        </div>
+      )}
     </div>
   );
 
@@ -1049,7 +1126,9 @@ export const App: React.FC = () => {
       <header className="flex h-14 items-center justify-between gap-1.5 sm:gap-2 border-b border-[#EAEAEF] bg-white px-2.5 sm:px-6 flex-shrink-0">
         <div className="flex items-center gap-1.5 sm:gap-2.5 flex-shrink-0">
           <button
+            type="button"
             onClick={() => setLeftDrawerOpen(true)}
+            aria-label="打开会话与导航菜单"
             className="lg:hidden rounded-xl p-1.5 sm:p-2 text-[#4B4D57] hover:bg-[#F3F2F7] flex-shrink-0"
           >
             <Menu className="h-5 w-5" />
@@ -1119,11 +1198,17 @@ export const App: React.FC = () => {
           </div>
 
           <button
+            type="button"
             onClick={() => setMobileModalOpen(true)}
             className="inline-flex h-7.5 min-[390px]:h-8.5 items-center gap-1 sm:gap-2 whitespace-nowrap rounded-full border border-[#E6E6EC] bg-[#FAFAFC] px-2 min-[390px]:px-3 sm:px-3.5 text-[11.5px] min-[390px]:text-[12.5px] sm:text-[13px] font-medium text-[#3C3E47] hover:bg-[#F3F2F7] transition cursor-pointer"
           >
-            <span className="h-2 w-2 rounded-full bg-[#5BA97B] flex-shrink-0" />
-            <span>{networkBadgeLabel}</span>
+            <span
+              className={`h-2 w-2 rounded-full flex-shrink-0 ${
+                remoteShared ? 'bg-[#5BA97B]' : 'bg-[#A8ACB8]'
+              }`}
+            />
+            <span className="sm:hidden">{networkBadgeShort}</span>
+            <span className="hidden sm:inline">{networkBadgeFull}</span>
             <ChevronDown className="hidden min-[380px]:block h-3.5 w-3.5 text-[#8E919C] flex-shrink-0" />
           </button>
         </div>
@@ -1193,6 +1278,18 @@ export const App: React.FC = () => {
               onRevertSnapshot={handleRevertSnapshot}
               onCreateCheckpoint={handleCreateCheckpoint}
               onPreviewFile={(rel) => setPreviewFilePath(rel)}
+              onOpenNewBoardModal={() => {
+                setModalPresetId('fullstack-dev');
+                setNewBoardModalOpen(true);
+              }}
+              onOpenDesktopMcpModal={() => setDesktopMcpModalOpen(true)}
+              onSwitchAgentEngine={(slotId, eng, mod, eff) =>
+                void handleUpdateAgent(slotId, {
+                  engine: eng,
+                  modelId: mod,
+                  reasoningEffort: eff,
+                })
+              }
             />
 
             {/* Balanced Spacious Right Column (376px) */}
@@ -1309,6 +1406,7 @@ export const App: React.FC = () => {
         onClose={() => setMobileModalOpen(false)}
         endpoints={overview?.endpoints ?? []}
         canManageSecurity={isLocalhost}
+        onConfigChanged={() => void fetchWorkbench(false)}
       />
 
       <NewBoardModal
@@ -1346,6 +1444,10 @@ export const App: React.FC = () => {
         }}
         onAdopt={handleAdoptSnapshot}
         onRevert={handleRevertSnapshot}
+        onSelectSnapshot={(sid) => {
+          setDiffPendingConflicts(null);
+          setDiffSnapshotId(sid);
+        }}
       />
 
       <FilePreviewModal

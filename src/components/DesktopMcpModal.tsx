@@ -196,24 +196,24 @@ export const DesktopMcpModal: React.FC<DesktopMcpModalProps> = ({
         </div>
 
         <div className="flex-1 min-h-0 overflow-y-auto space-y-3 pr-0.5">
-          {/* Plain-Chinese explanation of the 3 wakeup & delivery modes */}
+          {/* Condition-based explanation of the 3 wakeup & delivery modes */}
           <div className="rounded-2xl border border-[var(--ac-border-soft)] bg-[var(--ac-tint)] px-3.5 py-2.5 text-[12px] text-[#555866] grid grid-cols-1 sm:grid-cols-3 gap-2">
             <div>
-              <span className="font-semibold text-[#3B7A57]">1. 自动挂起监听秒回</span>
+              <span className="font-semibold text-[#3B7A57]">1. 自动挂起监听（支持端）</span>
               <p className="text-[11.5px] text-[#6E717C] mt-0.5">
-                CodeX / Claude Code 等开启「自动监听」后，汇报完自动 0 消耗挂起，留言 1 秒唤醒。
+                在 CodeX / Claude Code 等开启「自动监听」且宿主支持长工具调用时，汇报后可挂起等待新留言。
               </p>
             </div>
             <div>
               <span className="font-semibold text-[var(--ac-text)]">2. 侧栏与 Hook 直通</span>
               <p className="text-[11.5px] text-[#6E717C] mt-0.5">
-                Antigravity 打开右侧看板侧栏即可自动转入左侧对话，关闭侧栏也能靠 Hook 带入。
+                Antigravity 打开右侧看板分栏可自动转入左侧对话；未开侧栏时下次发起对话可由 Hook 带入留言。
               </p>
             </div>
             <div>
               <span className="font-semibold text-[#4B4D57]">3. 后台 CLI 兜底代答</span>
               <p className="text-[11.5px] text-[#6E717C] mt-0.5">
-                桌面端未在等待时，可直接在网页点击「改由后台 CLI 代答」或开启自动兜底。
+                当桌面宿主未在监听或尚未接入时，可一键由后台 CLI 成员直接接管答复。
               </p>
             </div>
           </div>
@@ -225,30 +225,35 @@ export const DesktopMcpModal: React.FC<DesktopMcpModalProps> = ({
           )}
 
           {selfTest && (
-            <div className="rounded-2xl border border-[var(--ac-border)] bg-[var(--ac-tint)] px-3.5 py-2.5 text-[12px] text-[#4B4D57] flex flex-wrap items-center justify-between gap-2">
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                <span>
-                  本地服务：
-                  <strong className={selfTest.serverHealth.ok ? 'text-[#3B7A57]' : 'text-[#A65850]'}>
-                    {selfTest.serverHealth.ok ? `正常 (${selfTest.serverHealth.latencyMs}ms)` : '异常'}
-                  </strong>
-                </span>
-                <span>
-                  MCP 工具握手：
-                  <strong className={selfTest.mcpStdio.ok ? 'text-[#3B7A57]' : 'text-[#A65850]'}>
-                    {selfTest.mcpStdio.ok
-                      ? `${selfTest.mcpStdio.toolsCount} 项可用 (${selfTest.mcpStdio.latencyMs}ms)`
-                      : '未就绪'}
-                  </strong>
-                </span>
-                <span>
-                  Hook 脚本探活：
-                  <strong className={selfTest.hookProbe.ok ? 'text-[#3B7A57]' : 'text-[#A65850]'}>
-                    {selfTest.hookProbe.ok ? `正常 (${selfTest.hookProbe.latencyMs}ms)` : '未就绪'}
-                  </strong>
-                </span>
+            <div className="rounded-2xl border border-[var(--ac-border)] bg-[var(--ac-tint)] px-3.5 py-2.5 text-[12px] text-[#4B4D57] space-y-1">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <span>
+                    1. 本地服务：
+                    <strong className={selfTest.serverHealth.ok ? 'text-[#3B7A57]' : 'text-[#A65850]'}>
+                      {selfTest.serverHealth.ok ? `正常 (${selfTest.serverHealth.latencyMs}ms)` : '异常'}
+                    </strong>
+                  </span>
+                  <span>
+                    2. MCP 工具清单：
+                    <strong className={selfTest.mcpStdio.ok ? 'text-[#3B7A57]' : 'text-[#A65850]'}>
+                      {selfTest.mcpStdio.ok
+                        ? `${selfTest.mcpStdio.toolsCount} 项可用 (${selfTest.mcpStdio.latencyMs}ms)`
+                        : '未就绪'}
+                    </strong>
+                  </span>
+                  <span>
+                    3. Hook 脚本响应：
+                    <strong className={selfTest.hookProbe.ok ? 'text-[#3B7A57]' : 'text-[#A65850]'}>
+                      {selfTest.hookProbe.ok ? `正常 (${selfTest.hookProbe.latencyMs}ms)` : '未就绪'}
+                    </strong>
+                  </span>
+                </div>
+                <span className="text-[11px] text-[#8A8D98]">仅测本机进程</span>
               </div>
-              <span className="text-[11px] text-[#8A8D98]">无副作用只读自检</span>
+              <div className="text-[11px] text-[#7A7D89]">
+                提示：自检验证本地服务与脚本本身可用；在宿主客户端中是否加载成功，请刷新对应客户端 MCP 列表并新开对话确认。
+              </div>
             </div>
           )}
 
@@ -300,7 +305,7 @@ export const DesktopMcpModal: React.FC<DesktopMcpModalProps> = ({
                                 : 'bg-[#F1F1F5] text-[#8E919C]'
                             }`}
                           >
-                            {client.installed ? '本机已安装' : '未检测到'}
+                            {client.installed ? '客户端已检测' : '未检测到客户端'}
                           </span>
                           <span
                             className={`rounded-md px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap ${
@@ -309,7 +314,7 @@ export const DesktopMcpModal: React.FC<DesktopMcpModalProps> = ({
                                 : 'bg-[#F4F4F7] text-[#7A7D89]'
                             }`}
                           >
-                            {client.registered ? '配置已写入' : '未接入'}
+                            {client.registered ? '配置已写入' : '未写入配置'}
                           </span>
                           {diag && (
                             <span
@@ -319,7 +324,7 @@ export const DesktopMcpModal: React.FC<DesktopMcpModalProps> = ({
                                   : 'bg-[#FDF5F4] text-[#A65850]'
                               }`}
                             >
-                              {diag.toolsReady ? '工具可调用' : '工具异常'}
+                              {diag.toolsReady ? '本地脚本就绪' : '工具异常'}
                             </span>
                           )}
                           {client.supportsHook && client.registered && (
@@ -376,34 +381,39 @@ export const DesktopMcpModal: React.FC<DesktopMcpModalProps> = ({
                         </div>
 
                         {client.id === 'antigravity' && (
-                          <div className="mt-2 flex flex-wrap items-center gap-2">
-                            <label className="inline-flex items-start sm:items-center gap-2 text-[12px] text-[#4B4D57] cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={enableAgyHook}
-                                onChange={(e) => setEnableAgyHook(e.target.checked)}
-                                className="mt-0.5 sm:mt-0 rounded border-[var(--ac-border-strong)] accent-[var(--ac-primary)] flex-shrink-0"
-                              />
-                              <span>
-                                同步挂载 PreInvocation Hook（闲置时网页 @主管 留言自动带入下次对话）
-                              </span>
-                            </label>
-                            {client.registered && (
-                              <button
-                                type="button"
-                                disabled={!isLocalhost || isBusy}
-                                onClick={() =>
-                                  void handleToggleRegister(
-                                    client,
-                                    'register',
-                                    !client.hookRegistered
-                                  )
-                                }
-                                className="rounded-lg border border-[var(--ac-border)] bg-white px-2.5 py-0.5 text-[11.5px] font-medium text-[var(--ac-text)] hover:bg-[var(--ac-soft)] disabled:opacity-45 whitespace-nowrap cursor-pointer"
-                              >
-                                {client.hookRegistered ? '停用 Hook' : '启用 Hook'}
-                              </button>
-                            )}
+                          <div className="mt-2 space-y-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <label className="inline-flex items-start sm:items-center gap-2 text-[12px] text-[#4B4D57] cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={enableAgyHook}
+                                  onChange={(e) => setEnableAgyHook(e.target.checked)}
+                                  className="mt-0.5 sm:mt-0 rounded border-[var(--ac-border-strong)] accent-[var(--ac-primary)] flex-shrink-0"
+                                />
+                                <span>
+                                  挂载 PreInvocation Hook（闲置时网页 @主管 留言自动带入下次对话）
+                                </span>
+                              </label>
+                              {client.registered && (
+                                <button
+                                  type="button"
+                                  disabled={!isLocalhost || isBusy}
+                                  onClick={() =>
+                                    void handleToggleRegister(
+                                      client,
+                                      'register',
+                                      !client.hookRegistered
+                                    )
+                                  }
+                                  className="rounded-lg border border-[var(--ac-border)] bg-white px-2.5 py-0.5 text-[11.5px] font-medium text-[var(--ac-text)] hover:bg-[var(--ac-soft)] disabled:opacity-45 whitespace-nowrap cursor-pointer"
+                                >
+                                  {client.hookRegistered ? '停用 Hook' : '启用 Hook'}
+                                </button>
+                              )}
+                            </div>
+                            <p className="pl-5 text-[11px] text-[#8A8D98]">
+                              用途说明：仅在 Antigravity 内发出提问前快速检查一次本机未读留言并附加到上下文；无未读留言时直接放行，可随时单独停用。
+                            </p>
                           </div>
                         )}
                       </div>
@@ -434,9 +444,13 @@ export const DesktopMcpModal: React.FC<DesktopMcpModalProps> = ({
                           type="button"
                           disabled={!isLocalhost || isBusy}
                           onClick={() => void handleToggleRegister(client, 'register')}
-                          className="inline-flex h-8.5 items-center rounded-xl bg-[var(--ac-primary)] px-4 text-[12.5px] font-semibold text-white hover:bg-[var(--ac-hover)] disabled:opacity-45 whitespace-nowrap cursor-pointer"
+                          className={`inline-flex h-8.5 items-center rounded-xl px-4 text-[12.5px] font-semibold disabled:opacity-45 whitespace-nowrap cursor-pointer ${
+                            client.installed
+                              ? 'bg-[var(--ac-primary)] text-white hover:bg-[var(--ac-hover)]'
+                              : 'border border-[var(--ac-border)] bg-white text-[var(--ac-text)] hover:bg-[var(--ac-soft)]'
+                          }`}
                         >
-                          {isBusy ? '写入中...' : '一键接入'}
+                          {isBusy ? '写入中...' : client.installed ? '一键接入' : '预写入配置'}
                         </button>
                       )}
                     </div>
