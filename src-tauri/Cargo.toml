@@ -1,7 +1,7 @@
 [package]
 name = "agent-swarm"
 version = "1.4.0"
-description = "AgentSwarm 多智能体协同看板与桌面端 MCP 调度中枢"
+description = "AgentSwarm Desktop Multi-Agent CoWork Board and MCP Hub"
 authors = ["Huanzhi0526"]
 edition = "2021"
 

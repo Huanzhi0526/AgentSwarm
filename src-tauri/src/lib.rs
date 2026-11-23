@@ -38,11 +38,13 @@ fn show_main_window(app: &AppHandle) {
 
 fn kill_owned_server(app: &AppHandle) {
     let state = app.state::<ServerProcessState>();
-    if let Ok(mut guard) = state.0.lock() {
-        if let Some(mut child) = guard.take() {
-            let _ = child.kill();
-            let _ = child.wait();
-        }
+    let child_opt = match state.0.lock() {
+        Ok(mut guard) => guard.take(),
+        Err(_) => None,
+    };
+    if let Some(mut child) = child_opt {
+        let _ = child.kill();
+        let _ = child.wait();
     }
 }
 
@@ -127,9 +129,12 @@ fn ensure_embedded_server(app: &AppHandle) {
 
     if let Ok(child) = cmd.spawn() {
         let state = app.state::<ServerProcessState>();
-        if let Ok(mut guard) = state.0.lock() {
-            *guard = Some(child);
-        }
+        match state.0.lock() {
+            Ok(mut guard) => {
+                *guard = Some(child);
+            }
+            Err(_) => {}
+        };
     }
 }
 
